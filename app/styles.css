@@ -81,6 +81,7 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 .empty p, .muted { color: var(--muted); }
 .employee { margin-top: 18px; padding: 20px; flex-wrap: wrap; }
 .employee .button { margin-left: auto; }
+.employee-actions, .hero-actions { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-left: auto; }
 .employee-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
 .employee-card { margin-top: 0; align-items: flex-start; }
 .employee-body { display: grid; gap: 7px; flex: 1 1 240px; }
@@ -100,6 +101,8 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 .action-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .action-links a { border-radius: 9px; padding: 9px 12px; color: white; background: var(--navy); text-decoration: none; font-weight: 650; font-size: .875rem; }
 .hero-link { background: var(--orange); color: #18283e; }
+.task-fab { position: relative; display: grid; place-items: center; width: 38px; height: 38px; min-width: 38px; padding: 0; border-radius: 50%; background: var(--orange); color: #18283e; font-size: 1.35rem; line-height: 1; }
+.task-fab span { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 100px; background: #b9342c; color: white; font-size: .65rem; font-weight: 800; }
 .sync-found, .sync-missing, .sync-unchecked { margin-top: 6px; border-radius: 7px; padding: 3px 5px; width: fit-content; }
 .sync-missing { color: #805018; background: #fff1dc; }
 .sync-unchecked { color: #566276; background: #eff1f5; }
@@ -128,6 +131,9 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 dialog { width: min(540px, calc(100% - 28px)); border: 1px solid var(--line); border-radius: 16px; padding: 22px; color: var(--text); }
 dialog::backdrop { background: #14294a88; }
 dialog form, #details { display: grid; gap: 10px; }
+dialog textarea { width: 100%; min-height: 120px; resize: vertical; border: 1px solid #a5b1c4; border-radius: 9px; padding: 10px 12px; font: inherit; color: var(--text); }
+.voice-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.voice-tools audio { max-width: 100%; height: 34px; }
 .heading { justify-content: space-between; }
 .detail-amount { font-size: 1.65rem; font-weight: 750; }
 .purpose { overflow-wrap: anywhere; white-space: pre-wrap; }
