@@ -125,6 +125,11 @@ function bankPage() {
     .filter(({row}) => (filter === "all" || pending(row)) && found(row))
     .sort((a, b) => b.row.date.localeCompare(a.row.date));
   const metrics = [["Всего операций", operations.length], ["Распознано автоматически", counts.auto], ["В очереди на проверку", queueSize], ["Доля автораспознавания", rate]];
+  const sync = operations.reduce((result, row) => {
+    result[row.syncState || "unchecked"]++;
+    return result;
+  }, {matched: 0, missing: 0, unchecked: 0});
+  const isSecureWorkspace = ["localhost", "127.0.0.1"].includes(location.hostname);
   return `
     <div class="breadcrumb"><a href="#team">ИИ-сотрудники</a><span aria-hidden="true">/</span> Банк</div>
     <header class="hero">
@@ -142,7 +147,11 @@ function bankPage() {
           <button class="secondary" aria-pressed="${filter === "queue"}" data-filter="queue">На проверку · ${queueSize}</button>
         </div>
       </div>
-      <div class="ledger-tools"><input id="operation-search" type="search" placeholder="Поиск по назначению, контрагенту или сумме" value="${escapeHtml(query)}" aria-label="Поиск операций"><button class="secondary" id="reconcile">Сверить с 1С</button><span>${selectedRows.size ? `Выбрано: ${selectedRows.size}` : ""}</span>${selectedRows.size ? '<button class="secondary" id="clear-selection">Снять выделение</button>' : ""}</div>
+      <div class="reconciliation" aria-label="Статус сверки с 1С">
+        <strong>Сверка с 1С</strong><span class="sync-found">Совпало: ${sync.matched}</span><span class="sync-missing">Нет документа: ${sync.missing}</span><span class="sync-unchecked">Не сверено: ${sync.unchecked}</span>
+        <p>${isSecureWorkspace ? "Сравнение идёт по дате, направлению и сумме. Нейла не меняет документы при сверке." : "Сверка и создание черновиков доступны в защищённом рабочем контуре, где подключена 1С. Здесь можно просматривать и разбирать выписки."}</p>
+      </div>
+      <div class="ledger-tools"><input id="operation-search" type="search" placeholder="Поиск по назначению, контрагенту или сумме" value="${escapeHtml(query)}" aria-label="Поиск операций">${isSecureWorkspace ? `<button class="secondary" id="reconcile">${selectedRows.size ? `Сверить выбранные · ${selectedRows.size}` : "Сверить с 1С"}</button>` : ""}<span>${selectedRows.size ? `Выбрано: ${selectedRows.size}` : ""}</span>${selectedRows.size ? '<button class="secondary" id="clear-selection">Снять выделение</button>' : ""}</div>
       ${operationTable(rows)}
     </section>`;
 }
@@ -322,14 +331,17 @@ screen.addEventListener("click", event => {
 
 async function reconcileWith1C(button) {
   if (!operations.length) return;
+  const selectedOperations = selectedRows.size
+    ? [...selectedRows].sort((a, b) => a - b).map(index => operations[index])
+    : operations;
   button.disabled = true;
-  feedback = "Сверяем операции с документами 1С…";
+  feedback = `Сверяем с документами 1С: ${selectedOperations.length} операций…`;
   render();
   try {
     const response = await fetch("/api/1c/reconcile", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({operations: operations.map(row => ({
+      body: JSON.stringify({operations: selectedOperations.map(row => ({
         reference: row.reference,
         date: row.date,
         direction: row.direction,
@@ -346,7 +358,7 @@ async function reconcileWith1C(button) {
       if (match.state === "matched") foundCount++;
       return {...row, syncState: match.state, syncDocumentNumber: match.documentNumber || ""};
     }));
-    feedback = `Сверка завершена: документов найдено в 1С — ${foundCount}; без документа — ${operations.length - foundCount}.`;
+    feedback = `Сверка завершена: совпало с документами 1С — ${foundCount}; не найдено — ${selectedOperations.length - foundCount}.`;
   } catch (error) {
     feedback = error.message;
   }
