@@ -113,6 +113,52 @@ function operationTable(rows) {
   </table></div>`;
 }
 
+function money(kopecks) {
+  return amounts.format(kopecks / 100);
+}
+
+function monthlyRows(account) {
+  const months = new Map();
+  operations.filter(row => (row.account || "51") === account).forEach(row => {
+    const month = row.date.slice(0, 7);
+    const summary = months.get(month) || {month, incoming: 0, outgoing: 0, count: 0, review: 0, missing: 0};
+    if (row.direction === "in") summary.incoming += row.kopecks;
+    else summary.outgoing += row.kopecks;
+    summary.count++;
+    if (["review", "unknown"].includes(row.status)) summary.review++;
+    if (row.syncState === "missing") summary.missing++;
+    months.set(month, summary);
+  });
+  return [...months.values()].sort((a, b) => b.month.localeCompare(a.month));
+}
+
+function monthLabel(value) {
+  const [year, month] = value.split("-");
+  return new Intl.DateTimeFormat("ru-RU", {month: "long", year: "numeric", timeZone: "UTC"})
+    .format(new Date(`${year}-${month}-01T00:00:00Z`));
+}
+
+function analyticsTable(account) {
+  const rows = monthlyRows(account);
+  if (!rows.length) return `<div class="empty"><strong>За этот счёт пока нет данных</strong><p>Нейла заполнит контроль после импорта выписки или чтения документов 1С.</p></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>Месяц</th><th>Поступления</th><th>Расходы</th><th>Операций</th><th>На проверке</th><th>Расхождения с 1С</th></tr></thead><tbody>${rows.map(row => `<tr><td><strong>${escapeHtml(monthLabel(row.month))}</strong></td><td class="amount in">+${money(row.incoming)}</td><td class="amount">−${money(row.outgoing)}</td><td>${row.count}</td><td>${row.review || "—"}</td><td>${row.missing ? `<span class="sync-missing">${row.missing}</span>` : "—"}</td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function analyticsPage() {
+  const bank = monthlyRows("51").reduce((sum, row) => sum + row.incoming - row.outgoing, 0);
+  const cash = monthlyRows("50").reduce((sum, row) => sum + row.incoming - row.outgoing, 0);
+  const flagged = operations.filter(row => ["review", "unknown"].includes(row.status) || row.syncState === "missing").length;
+  const isSecureWorkspace = ["localhost", "127.0.0.1"].includes(location.hostname);
+  return `
+    <div class="breadcrumb"><a href="#team">ИИ-сотрудники</a><span aria-hidden="true">/</span> Контроль 50 / 51</div>
+    <header class="hero"><div><h1>Нейла · Банк и касса</h1><p>Ежемесячный контроль операций по счетам 50 и 51</p></div>${isSecureWorkspace ? '<button id="load-1c-months">Обновить из 1С</button>' : ""}</header>
+    <section class="metrics" aria-label="Итоги контроля"><div class="card metric"><span>Чистый поток · 51</span><strong>${money(bank)}</strong></div><div class="card metric"><span>Чистый поток · 50</span><strong>${money(cash)}</strong></div><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют внимания</span><strong>${flagged}</strong></div></section>
+    <section class="control-note"><strong>Что делает Нейла</strong><span>Собирает банковские документы и кассовые ордера из 1С, классифицирует статьи, показывает обороты по месяцам и выделяет операции без документа или решения.</span></section>
+    <section class="card analytics-card"><div class="ledger-heading"><div><h2>Счёт 51 · Расчётные счета</h2><p class="muted">Источник: поступления и списания с расчётного счёта в 1С, либо загруженная банковская выписка.</p></div></div>${analyticsTable("51")}</section>
+    <section class="card analytics-card"><div class="ledger-heading"><div><h2>Счёт 50 · Касса</h2><p class="muted">Источник: приходные и расходные кассовые ордера 1С. Данные ОФД — вспомогательный источник для сверки, не замена кассовых документов.</p></div></div>${analyticsTable("50")}</section>
+    <section class="card data-map"><h2>Контур данных Нейлы</h2><div><strong>51 · Банк:</strong> API банка / файл выписки → документы 1С → Нейла → сверка, статьи, черновики.</div><div><strong>50 · Касса:</strong> ПКО и РКО 1С → Нейла → контроль статей и расхождений. В будущем: Мой ОФД → сверка фискальных чеков с кассой.</div><p class="muted">Нейла не проводит документы автоматически. Создание или изменение черновика всегда будет отдельным подтверждаемым действием бухгалтера.</p></section>`;
+}
+
 function bankPage() {
   const counts = stats();
   const queueSize = counts.review + counts.unknown;
@@ -196,12 +242,12 @@ function connectionsPage() {
 }
 
 function render() {
-  const page = ["team", "bank", "connections"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
+  const page = ["team", "bank", "analytics", "connections"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
   document.querySelectorAll("nav a").forEach(link => {
     if (link.hash === `#${page}`) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  screen.innerHTML = page === "bank" ? bankPage() : page === "connections" ? connectionsPage() : nonBank(page);
+  screen.innerHTML = page === "bank" ? bankPage() : page === "analytics" ? analyticsPage() : page === "connections" ? connectionsPage() : nonBank(page);
   renderAccount();
 }
 
@@ -232,9 +278,10 @@ screen.addEventListener("submit", async event => {
       location.hash = "bank";
       return;
     }
-    const documents = result.bankDocuments.length
-      ? ` Найдены банковские ресурсы: ${result.bankDocuments.join(", ")}.`
-      : " Соединение работает, банковские ресурсы пока не открыты в составе OData.";
+    const resources = [...(result.bankDocuments || []), ...(result.cashDocuments || [])];
+    const documents = resources.length
+      ? ` Найдены ресурсы банка и кассы: ${resources.join(", ")}.`
+      : " Соединение работает, ресурсы банка и кассы пока не открыты в составе OData.";
     connectionFeedback = `Подключение работает. Доступно объектов: ${result.entityCount}.${documents}`;
   } catch (error) {
     connectionFeedback = error.message;
@@ -261,7 +308,8 @@ function operationFrom1C(operation) {
     counterparty: operation.counterparty || "Контрагент не указан",
     purpose: operation.purpose || `Документ 1С № ${operation.number || "без номера"}`,
     reference: `1С:${operation.number || ""}:${date}`,
-    origin: `1С: ${operation.direction === "in" ? "Поступление на расчётный счёт" : "Списание с расчётного счёта"}`,
+    origin: `1С: ${operation.title || (operation.direction === "in" ? "Поступление на расчётный счёт" : "Списание с расчётного счёта")}`,
+    account: operation.account === "50" ? "50" : "51",
   };
 }
 
@@ -320,6 +368,7 @@ screen.addEventListener("click", event => {
     return response.arrayBuffer();
   }, "Демонстрационная выписка");
   if (button.id === "reconcile") reconcileWith1C(button);
+  if (button.id === "load-1c-months") loadMonthlyControl(button);
   if (button.dataset.filter) {
     filter = button.dataset.filter;
     render();
@@ -359,6 +408,24 @@ async function reconcileWith1C(button) {
       return {...row, syncState: match.state, syncDocumentNumber: match.documentNumber || ""};
     }));
     feedback = `Сверка завершена: совпало с документами 1С — ${foundCount}; не найдено — ${selectedOperations.length - foundCount}.`;
+  } catch (error) {
+    feedback = error.message;
+  }
+  render();
+}
+
+async function loadMonthlyControl(button) {
+  button.disabled = true;
+  feedback = "Загружаем банковские и кассовые документы из 1С…";
+  try {
+    const response = await fetch("/api/1c/monthly-preview", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Не удалось загрузить документы 1С.");
+    const additions = (result.operations || []).map(operationFrom1C).filter(Boolean).map(Bank.classify);
+    const unique = new Map(operations.map(row => [identity(row), row]));
+    additions.forEach(row => unique.set(identity(row), row));
+    save([...unique.values()]);
+    feedback = `Из 1С загружено для контроля: ${additions.length} документов. Ничего в 1С не изменено.`;
   } catch (error) {
     feedback = error.message;
   }
