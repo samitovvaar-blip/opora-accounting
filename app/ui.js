@@ -6,6 +6,7 @@ const taskDialog = document.querySelector("#task-composer");
 const category = document.querySelector("#category");
 const storageKey = "opora-accounting:bank:v1";
 const taskStorageKey = "opora-accounting:tasks:v1";
+const activityStorageKey = "opora-accounting:activity:v1";
 const amounts = new Intl.NumberFormat("ru-RU", {style: "currency", currency: "RUB"});
 const dates = new Intl.DateTimeFormat("ru-RU", {timeZone: "UTC"});
 let operations = [];
@@ -24,6 +25,8 @@ let voiceRecorder = null;
 let voiceChunks = [];
 let voiceUrl = "";
 let agentActivity = {Нейла: "idle"};
+let selectedPeriod = "";
+let activities = [];
 
 const employees = [
   {name: "Нейла", role: "Банк и касса", status: "Работает", note: "51 и 50: выписки, кассовые ордера, статьи, сверка и черновики.", href: "#neila", avatar: "Н", point: "Обороты 50 / 51 и расхождения"},
@@ -38,6 +41,10 @@ try {
 } catch {
   feedback = "Не удалось прочитать сохранённые операции.";
 }
+try {
+  const storedActivity = JSON.parse(localStorage.getItem(activityStorageKey) || "[]");
+  if (Array.isArray(storedActivity)) activities = storedActivity;
+} catch {}
 try {
   const storedTasks = JSON.parse(localStorage.getItem(taskStorageKey) || "[]");
   if (Array.isArray(storedTasks)) tasks = storedTasks;
@@ -59,6 +66,19 @@ function save(next) {
 function saveTasks(next) {
   localStorage.setItem(taskStorageKey, JSON.stringify(next));
   tasks = next;
+}
+
+function logActivity(text, level = "info") {
+  activities = [{id: crypto.randomUUID(), text, level, at: new Date().toISOString()}, ...activities].slice(0, 200);
+  localStorage.setItem(activityStorageKey, JSON.stringify(activities));
+}
+
+function periodMatches(row) {
+  return !selectedPeriod || String(row.date || "").startsWith(selectedPeriod);
+}
+
+function periodControl() {
+  return `<div class="period-control"><label>Период <input type="month" id="period" value="${selectedPeriod}"></label>${selectedPeriod ? '<button class="secondary" id="clear-period">Все периоды</button>' : '<span>Все периоды</span>'}</div>`;
 }
 
 function taskButton(name) {
@@ -177,7 +197,7 @@ function money(kopecks) {
 
 function monthlyRows(account) {
   const months = new Map();
-  operations.filter(row => (row.account || "51") === account).forEach(row => {
+  operations.filter(row => (row.account || "51") === account && periodMatches(row)).forEach(row => {
     const month = row.date.slice(0, 7);
     const summary = months.get(month) || {month, incoming: 0, outgoing: 0, count: 0, review: 0, missing: 0};
     if (row.direction === "in") summary.incoming += row.kopecks;
@@ -203,8 +223,27 @@ function analyticsTable(account) {
 }
 
 function neilaTabs(active) {
-  const tabs = [["neila-bank", "Банк"], ["neila-cash", "Касса"], ["neila-control", "Контроль счетов"]];
+  const tabs = [["neila-bank", "Операции"], ["neila-cash", "Касса"], ["neila-control", "Контроль 50 / 51"], ["neila-tasks", "Задачи"], ["neila-history", "История"]];
   return `<nav class="subnav" aria-label="Разделы Нейлы">${tabs.map(([href, label]) => `<a href="#${href}" ${active === href ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+}
+
+function taskStatus(task) {
+  return task.status === "done" ? "Выполнена" : task.status === "working" ? "В работе" : "Новая";
+}
+
+function neilaTasksPage() {
+  const neilaTasks = tasks.filter(task => task.recipient === "Нейла");
+  const routine = ["Загрузить и сверить банковскую выписку", "Проверить остатки и движения по 50 / 51", "Разобрать неверные статьи и операции без документа"];
+  return `<div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> Задачи</div><header class="hero"><div><h1>Задачи Нейлы</h1><p>Очередь поручений и регламентных проверок</p></div><div class="hero-actions">${taskButton("Нейла")}</div></header>${neilaTabs("neila-tasks")}
+    <section class="task-columns"><section class="card task-list"><div class="heading"><h2>Поручения</h2><span>${neilaTasks.length}</span></div>${neilaTasks.length ? neilaTasks.map(task => `<article class="task-row"><div><strong>${escapeHtml(task.text)}</strong><small>${new Date(task.createdAt).toLocaleString("ru-RU")}${task.hasVoice ? " · голосовое" : ""}</small></div><span class="employee-status ${task.status === "done" ? "ready" : task.status === "working" ? "working" : "attention"}">${taskStatus(task)}</span></article>`).join("") : '<div class="empty"><strong>Нет новых поручений</strong><p>Нажмите круглый плюс, чтобы поставить задачу.</p></div>'}</section>
+    <section class="card task-list"><div class="heading"><h2>Ежедневный регламент</h2><span>Каждый день</span></div>${routine.map((item, index) => `<article class="task-row"><div><strong>${item}</strong><small>${index === 0 ? "Выписка, документы и остатки" : index === 1 ? "Контроль в 1С" : "Очередь исключений"}</small></div><span class="employee-status ${employeeStatus(employees[0]).tone}">${index === 0 && agentActivity.Нейла === "working" ? "В работе" : "Ожидает запуска"}</span></article>`).join("")}</section></section>
+    <section class="card agent-brief"><h2>Ежемесячный регламент</h2><p>Сверка оборотов 50 / 51, разбор неразнесённых операций, контроль кассовой дисциплины, итоговый отчёт главному бухгалтеру.</p></section>`;
+}
+
+function neilaHistoryPage() {
+  const entries = activities.filter(item => item.text.includes("Нейла") || item.text.includes("1С"));
+  return `<div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> История</div><header class="hero"><div><h1>История действий</h1><p>Что Нейла делала в 1С и в рабочей очереди</p></div></header>${neilaTabs("neila-history")}
+    <section class="card history-list">${entries.length ? entries.map(item => `<article><strong>${escapeHtml(item.text)}</strong><small>${new Date(item.at).toLocaleString("ru-RU")}</small></article>`).join("") : '<div class="empty"><strong>История пока пуста</strong><p>Здесь появятся загрузки, сверки, решения и выполненные задачи.</p></div>'}</section>`;
 }
 
 function neilaHub() {
@@ -226,6 +265,7 @@ function analyticsPage() {
     <div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> Контроль 50 / 51</div>
     <header class="hero"><div><h1>Нейла · Банк и касса</h1><p>Ежемесячный контроль операций по счетам 50 и 51</p></div><div class="hero-actions">${taskButton("Нейла")}${isSecureWorkspace ? '<button id="load-1c-months">Обновить из 1С</button>' : ""}</div></header>
     ${neilaTabs("neila-control")}
+    ${periodControl()}
     <section class="metrics" aria-label="Итоги контроля"><div class="card metric"><span>Чистый поток · 51</span><strong>${money(bank)}</strong></div><div class="card metric"><span>Чистый поток · 50</span><strong>${money(cash)}</strong></div><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют внимания</span><strong>${flagged}</strong></div></section>
     <section class="control-note"><strong>Что делает Нейла</strong><span>Собирает банковские документы и кассовые ордера из 1С, классифицирует статьи, показывает обороты по месяцам и выделяет операции без документа или решения.</span></section>
     <section class="card analytics-card"><div class="ledger-heading"><div><h2>Счёт 51 · Расчётные счета</h2><p class="muted">Источник: поступления и списания с расчётного счёта в 1С, либо загруженная банковская выписка.</p></div></div>${analyticsTable("51")}</section>
@@ -235,7 +275,7 @@ function analyticsPage() {
 
 function bankPage(account = "51") {
   const isCash = account === "50";
-  const scope = operations.filter(row => (row.account || "51") === account);
+  const scope = operations.filter(row => (row.account || "51") === account && periodMatches(row));
   const counts = Object.fromEntries(Object.keys(Bank.status).map(status => [status, scope.filter(row => row.status === status).length]));
   const queueSize = counts.review + counts.unknown;
   const rate = operations.length ? `${new Intl.NumberFormat("ru-RU", {maximumFractionDigits: 1}).format(counts.auto / operations.length * 100)}%` : "—";
@@ -244,7 +284,7 @@ function bankPage(account = "51") {
   const found = row => !needle || [row.counterparty, row.purpose, row.category, String(row.kopecks / 100).replace(".", ",")]
     .some(value => String(value || "").toLowerCase().replace(/\s/g, "").includes(needle));
   const rows = operations.map((row, index) => ({row, index}))
-    .filter(({row}) => (row.account || "51") === account && (filter === "all" || pending(row)) && found(row))
+    .filter(({row}) => (row.account || "51") === account && periodMatches(row) && (filter === "all" || pending(row)) && found(row))
     .sort((a, b) => b.row.date.localeCompare(a.row.date));
   const metrics = [["Всего операций", scope.length], ["Распознано автоматически", counts.auto], ["В очереди на проверку", queueSize], ["Доля автораспознавания", rate]];
   const sync = scope.reduce((result, row) => {
@@ -260,6 +300,7 @@ function bankPage(account = "51") {
       <input type="file" id="file" accept=".txt,.csv" hidden aria-label="Файл банковской выписки">
     </header>
     ${neilaTabs(isCash ? "neila-cash" : "neila-bank")}
+    ${periodControl()}
     <div class="import-info"><span>${isCash ? "Источник: ПКО и РКО в 1С; Мой ОФД будет добавлен как сверочный источник." : "CSV по образцу или TXT в формате 1С"}</span>${isCash ? "" : '<a href="examples/vypiska.csv" download>Скачать образец CSV</a><button class="text-button" id="demo">Открыть демо</button>'}</div>
     <p class="feedback" role="status">${escapeHtml(feedback)}</p>
     <section class="metrics" aria-label="Итоги обработки">${metrics.map(([label, value]) => `<div class="card metric"><span>${label}</span><strong>${value}</strong></div>`).join("")}</section>
@@ -324,12 +365,12 @@ function connectionsPage() {
 }
 
 function render() {
-  const page = ["team", "bank", "analytics", "connections", "neila", "neila-bank", "neila-cash", "neila-control", "marta", "lev", "rita"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
+  const page = ["team", "bank", "analytics", "connections", "neila", "neila-bank", "neila-cash", "neila-control", "neila-tasks", "neila-history", "marta", "lev", "rita"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
   document.querySelectorAll("nav a").forEach(link => {
     if (link.hash === `#${page}`) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  screen.innerHTML = page === "bank" || page === "neila-bank" ? bankPage("51") : page === "neila-cash" ? bankPage("50") : page === "analytics" || page === "neila-control" ? analyticsPage() : page === "neila" ? neilaHub() : page === "connections" ? connectionsPage() : nonBank(page);
+  screen.innerHTML = page === "bank" || page === "neila-bank" ? bankPage("51") : page === "neila-cash" ? bankPage("50") : page === "analytics" || page === "neila-control" ? analyticsPage() : page === "neila-tasks" ? neilaTasksPage() : page === "neila-history" ? neilaHistoryPage() : page === "neila" ? neilaHub() : page === "connections" ? connectionsPage() : nonBank(page);
   renderAccount();
 }
 
@@ -506,6 +547,7 @@ screen.addEventListener("click", event => {
   }
   if (button.dataset.review !== undefined) openItem(Number(button.dataset.review));
   if (button.id === "clear-selection") { selectedRows.clear(); render(); }
+  if (button.id === "clear-period") { selectedPeriod = ""; render(); }
 });
 
 async function reconcileWith1C(button) {
@@ -515,6 +557,7 @@ async function reconcileWith1C(button) {
     : operations;
   button.disabled = true;
   agentActivity.Нейла = "working";
+  logActivity(`Нейла начала сверку ${selectedOperations.length} операций с 1С.`);
   feedback = `Сверяем с документами 1С: ${selectedOperations.length} операций…`;
   render();
   try {
@@ -539,8 +582,10 @@ async function reconcileWith1C(button) {
       return {...row, syncState: match.state, syncDocumentNumber: match.documentNumber || ""};
     }));
     feedback = `Сверка завершена: совпало с документами 1С — ${foundCount}; не найдено — ${selectedOperations.length - foundCount}.`;
+    logActivity(`Нейла завершила сверку с 1С: совпало ${foundCount}, не найдено ${selectedOperations.length - foundCount}.`);
   } catch (error) {
     feedback = error.message;
+    logActivity(`Ошибка Нейлы при сверке с 1С: ${feedback}`, "error");
   }
   agentActivity.Нейла = "idle";
   render();
@@ -549,10 +594,14 @@ async function reconcileWith1C(button) {
 async function loadMonthlyControl(button) {
   button.disabled = true;
   agentActivity.Нейла = "working";
+  logActivity("Нейла начала загрузку банковских и кассовых документов из 1С.");
   feedback = "Загружаем банковские и кассовые документы из 1С…";
   render();
   try {
-    const response = await fetch("/api/1c/monthly-preview", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+    const start = selectedPeriod ? `${selectedPeriod}-01` : "";
+    const [year, month] = selectedPeriod ? selectedPeriod.split("-").map(Number) : [];
+    const end = selectedPeriod ? `${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, "0")}-01` : "";
+    const response = await fetch("/api/1c/monthly-preview", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({start, end})});
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Не удалось загрузить документы 1С.");
     const additions = (result.operations || []).map(operationFrom1C).filter(Boolean).map(Bank.classify);
@@ -560,8 +609,10 @@ async function loadMonthlyControl(button) {
     additions.forEach(row => unique.set(identity(row), row));
     save([...unique.values()]);
     feedback = `Из 1С загружено для контроля: ${additions.length} документов. Ничего в 1С не изменено.`;
+    logActivity(`Нейла загрузила из 1С ${additions.length} документов для контроля 50 / 51.`);
   } catch (error) {
     feedback = error.message;
+    logActivity(`Ошибка Нейлы при загрузке из 1С: ${feedback}`, "error");
   }
   agentActivity.Нейла = "idle";
   render();
@@ -603,6 +654,12 @@ screen.addEventListener("input", event => {
   screen.querySelector("#operation-search")?.focus();
 });
 
+screen.addEventListener("change", event => {
+  if (event.target.id !== "period") return;
+  selectedPeriod = event.target.value;
+  render();
+});
+
 document.querySelector("#close").addEventListener("click", () => dialog.close());
 document.querySelector("#close-task").addEventListener("click", () => taskDialog.close());
 document.querySelector("#record-voice").addEventListener("click", toggleVoiceRecording);
@@ -611,6 +668,7 @@ document.querySelector("#task-form").addEventListener("submit", event => {
   const text = document.querySelector("#task-text").value.trim();
   if (!text || !taskRecipient) return;
   saveTasks([{id: crypto.randomUUID(), recipient: taskRecipient, text, hasVoice: Boolean(voiceUrl), status: "new", createdAt: new Date().toISOString()}, ...tasks]);
+  logActivity(`Новая задача для ${taskRecipient}: ${text}`);
   feedback = `Задача для ${taskRecipient} добавлена в очередь.${voiceUrl ? " Голосовое прикреплено в текущем рабочем месте." : ""}`;
   taskDialog.close();
   render();
