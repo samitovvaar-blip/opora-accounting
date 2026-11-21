@@ -15,6 +15,7 @@ let feedback = "";
 let connectionFeedback = "";
 let signedInUser = null;
 let authError = "";
+let connectionState = {saved: false, status: "not_checked"};
 
 const employees = [
   {name: "Нейла", role: "Банк и касса", status: "Работает", note: "51 и 50: выписки, кассовые ордера, статьи, сверка и черновики.", href: "#neila", avatar: "Н", point: "Обороты 50 / 51 и расхождения"},
@@ -69,6 +70,18 @@ function renderAccount() {
     return;
   }
   account.innerHTML = `<button id="sign-in">Войти через Google</button>${authError ? `<small class="feedback">${escapeHtml(authError)}</small>` : ""}`;
+}
+
+async function refreshConnectionStatus() {
+  if (!["localhost", "127.0.0.1"].includes(location.hostname)) return;
+  try {
+    const response = await fetch("/api/1c/status", {cache: "no-store"});
+    if (!response.ok) return;
+    connectionState = await response.json();
+    if (location.hash === "#connections") render();
+  } catch {
+    // Статус останется локальным, если защищённый сервис ещё не запущен.
+  }
 }
 
 function nonBank(page) {
@@ -224,6 +237,9 @@ function bankPage(account = "51") {
 }
 
 function connectionsPage() {
+  const state = connectionState;
+  const label = state.status === "connected" ? "Подключено" : state.status === "error" ? "Ошибка подключения" : state.saved ? "Сохранено, ещё не проверено" : "Не подключено";
+  const detail = state.status === "error" ? state.error : state.checkedAt ? `Последняя проверка: ${new Date(state.checkedAt).toLocaleString("ru-RU")}` : "";
   return `
     <div class="breadcrumb">Настройки <span aria-hidden="true">/</span> Подключения</div>
     <header class="hero compact-hero">
@@ -233,19 +249,21 @@ function connectionsPage() {
       <form id="connection-form" class="card connection-form">
         <fieldset>
           <legend>Где находится база</legend>
-          <label class="radio"><input type="radio" name="kind" value="fresh" checked> 1С:Фреш</label>
-          <label class="radio"><input type="radio" name="kind" value="local"> Локальная база</label>
+          <label class="radio"><input type="radio" name="kind" value="fresh" ${state.kind !== "local" ? "checked" : ""}> 1С:Фреш</label>
+          <label class="radio"><input type="radio" name="kind" value="local" ${state.kind === "local" ? "checked" : ""}> Локальная база</label>
         </fieldset>
         <label>Адрес приложения 1С
-          <input name="url" type="url" placeholder="https://1cfresh.com/a/bs/12345" autocomplete="url" required>
+          <input name="url" type="url" value="${escapeHtml(state.url || "")}" placeholder="https://1cfresh.com/a/bs/12345" autocomplete="url" required>
         </label>
         <label>Служебный пользователь
-          <input name="username" autocomplete="username" required>
+          <input name="username" value="${escapeHtml(state.username || "")}" autocomplete="username" required>
         </label>
         <label>Пароль
-          <input name="password" type="password" autocomplete="current-password" required>
+          <input name="password" type="password" placeholder="${state.passwordSaved ? "Сохранён в Связке ключей macOS" : "Введите пароль"}" autocomplete="current-password" ${state.passwordSaved ? "" : "required"}>
         </label>
-        <button type="submit" name="action" value="verify">Проверить подключение</button>
+        <label class="remember"><input type="checkbox" name="remember" ${state.passwordSaved ? "checked" : ""}> Сохранить пароль в Связке ключей этого Mac</label>
+        <div class="connection-status ${state.status}"><strong>${label}</strong>${detail ? `<span>${escapeHtml(detail)}</span>` : ""}</div>
+        <button type="submit" name="action" value="verify">${state.passwordSaved ? "Проверить сохранённое подключение" : "Проверить подключение"}</button>
         <button class="secondary" type="submit" name="action" value="preview">Проверить Нейлу на 10 операциях</button>
         <p class="feedback connection-feedback" role="status">${escapeHtml(connectionFeedback)}</p>
       </form>
@@ -257,7 +275,7 @@ function connectionsPage() {
           <li>Разрешите только банковские документы и нужные справочники.</li>
           <li>Скопируйте адрес приложения и проверьте соединение.</li>
         </ol>
-        <p class="muted">Пароль используется только для текущей проверки и не сохраняется в браузере или файлах проекта.</p>
+        <p class="muted">Адрес, логин и статус сохраняются локально. Пароль хранится только в Связке ключей macOS — не в браузере, не в 1С и не в файлах проекта.</p>
       </aside>
     </section>`;
 }
@@ -296,6 +314,7 @@ screen.addEventListener("submit", async event => {
       save([...operations, ...additions]);
       feedback = `Нейла прочитала ${additions.length} операций из 1С. Ничего в базе не изменено.`;
       connectionFeedback = "Тест Нейлы завершён. Откройте рабочее место банка, чтобы посмотреть решения.";
+      await refreshConnectionStatus();
       location.hash = "bank";
       return;
     }
@@ -304,8 +323,10 @@ screen.addEventListener("submit", async event => {
       ? ` Найдены ресурсы банка и кассы: ${resources.join(", ")}.`
       : " Соединение работает, ресурсы банка и кассы пока не открыты в составе OData.";
     connectionFeedback = `Подключение работает. Доступно объектов: ${result.entityCount}.${documents}`;
+    await refreshConnectionStatus();
   } catch (error) {
     connectionFeedback = error.message;
+    connectionState = {...connectionState, status: "error", error: connectionFeedback};
   }
   if (location.hash === "connections") {
     form.querySelector('input[name="password"]').value = "";
@@ -517,3 +538,4 @@ window.addEventListener("opora-auth", event => {
   renderAccount();
 });
 render();
+refreshConnectionStatus();
