@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ОПОРА Бухгалтерия</title>
-<link rel="stylesheet" href="app/styles.css?v=20261122-4">
+<link rel="stylesheet" href="app/styles.css?v=20261122-5">
 <script defer src="app/bank.js"></script>
 <script type="module" src="app/firebase.js"></script>
-<script defer src="app/ui.js?v=20261122-4"></script>
+<script defer src="app/ui.js?v=20261122-5"></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -31,6 +31,16 @@
     <label for="category">Категория операции</label>
     <select id="category" required></select>
     <button id="confirm">Сохранить решение</button>
+  </form>
+</dialog>
+<dialog id="task-composer" aria-labelledby="task-title">
+  <form id="task-form">
+    <div class="heading"><h2 id="task-title">Дать задачу сотруднику</h2><button type="button" id="close-task" class="secondary">Закрыть</button></div>
+    <p id="task-recipient" class="muted"></p>
+    <label for="task-text">Сообщение</label>
+    <textarea id="task-text" maxlength="2000" placeholder="Например: проверь расхождения по 51 счёту за ноябрь" required></textarea>
+    <div class="voice-tools"><button type="button" class="secondary" id="record-voice">● Записать голосовое</button><audio id="voice-preview" controls hidden></audio><small id="voice-status" class="muted"></small></div>
+    <button type="submit">Отправить задачу</button>
   </form>
 </dialog>
 </body>
