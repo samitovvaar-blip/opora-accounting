@@ -105,6 +105,15 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 .subnav a[aria-current] { background: #edf0fa; border-color: #bac5e6; }
 .action-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .action-links a { border-radius: 9px; padding: 9px 12px; color: white; background: var(--navy); text-decoration: none; font-weight: 650; font-size: .875rem; }
+.period-control { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; margin: 14px 0; color: var(--muted); font-size: .875rem; }
+.period-control label { display: grid; gap: 4px; color: var(--text); font-weight: 650; }
+.period-control input { border: 1px solid #a5b1c4; border-radius: 8px; padding: 8px 10px; font: inherit; }
+.task-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+.task-list, .history-list { overflow: hidden; }
+.task-list .heading, .history-list > article { padding: 15px 18px; border-bottom: 1px solid var(--line); }
+.task-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 15px 18px; border-top: 1px solid var(--line); }
+.task-row small, .history-list small { display: block; color: var(--muted); margin-top: 3px; font-size: .8125rem; }
+.history-list > article { display: grid; gap: 3px; }
 .hero-link { background: var(--orange); color: #18283e; }
 .task-fab { position: relative; display: grid; place-items: center; width: 38px; height: 38px; min-width: 38px; padding: 0; border-radius: 50%; background: var(--orange); color: #18283e; font-size: 1.35rem; line-height: 1; }
 .task-fab span { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 100px; background: #b9342c; color: white; font-size: .65rem; font-weight: 800; }
@@ -147,6 +156,7 @@ select { border: 1px solid #a5b1c4; padding: 9px; border-radius: 8px; max-width:
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 950px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 800px) { .connection-grid { grid-template-columns: 1fr; } }
+@media (max-width: 800px) { .task-columns { grid-template-columns: 1fr; } }
 @media (max-width: 950px) { .employee-grid { grid-template-columns: 1fr; } }
 @media (max-width: 680px) {
   body { display: block; }
