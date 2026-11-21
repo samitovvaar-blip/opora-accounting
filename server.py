@@ -94,7 +94,11 @@ def inspect_metadata(xml_bytes: bytes, content_type: str = "", final_url: str = 
         name for name in entity_sets
         if name.startswith("Document_") and any(word in name.lower() for word in ("расчетн", "расчётн", "банк"))
     ]
-    return {"entityCount": len(entity_sets), "bankDocuments": sorted(bank_documents)[:30]}
+    cash_documents = [
+        name for name in entity_sets
+        if name.startswith("Document_") and any(word in name.lower() for word in ("кассов", "приходныйкассов", "расходныйкассов"))
+    ]
+    return {"entityCount": len(entity_sets), "bankDocuments": sorted(bank_documents)[:30], "cashDocuments": sorted(cash_documents)[:30]}
 
 
 def odata_json(odata_url: str, token: str, entity: str, limit: int) -> list[dict[str, object]]:
@@ -119,11 +123,22 @@ def read_value(row: dict[str, object], *names: str) -> str:
     return ""
 
 
-def bank_preview(odata_url: str, token: str, limit: int) -> list[dict[str, object]]:
-    documents = [("Document_ПоступлениеНаРасчетныйСчет", "in"), ("Document_СписаниеСРасчетногоСчета", "out")]
+def account_preview(odata_url: str, token: str, limit: int) -> list[dict[str, object]]:
+    documents = [
+        ("Document_ПоступлениеНаРасчетныйСчет", "in", "51", "Поступление на расчётный счёт"),
+        ("Document_СписаниеСРасчетногоСчета", "out", "51", "Списание с расчётного счёта"),
+        ("Document_ПриходныйКассовыйОрдер", "in", "50", "Приходный кассовый ордер"),
+        ("Document_РасходныйКассовыйОрдер", "out", "50", "Расходный кассовый ордер"),
+    ]
     operations = []
-    for entity, direction in documents:
-        for row in odata_json(odata_url, token, entity, limit):
+    for entity, direction, account, title in documents:
+        try:
+            rows = odata_json(odata_url, token, entity, limit)
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                continue
+            raise
+        for row in rows:
             if not isinstance(row, dict):
                 continue
             operations.append({
@@ -133,6 +148,8 @@ def bank_preview(odata_url: str, token: str, limit: int) -> list[dict[str, objec
                 "amount": read_value(row, "Amount", "СуммаДокумента", "Сумма"),
                 "counterparty": read_value(row, "Контрагент", "КонтрагентПредставление", "Контрагент_Name"),
                 "purpose": read_value(row, "НазначениеПлатежа", "Комментарий", "Содержание"),
+                "account": account,
+                "title": title,
             })
     return operations[:limit]
 
@@ -190,7 +207,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        if self.path not in {"/api/1c/test", "/api/1c/bank-preview", "/api/1c/reconcile"}:
+        if self.path not in {"/api/1c/test", "/api/1c/bank-preview", "/api/1c/monthly-preview", "/api/1c/reconcile"}:
             self.send_json(HTTPStatus.NOT_FOUND, {"error": "Маршрут не найден."})
             return
         try:
@@ -203,6 +220,11 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(rows, list):
                     raise ValueError("Некорректные данные операций для сверки.")
                 self.send_json(HTTPStatus.OK, {"ok": True, "results": reconcile_bank_operations(rows)})
+                return
+            if self.path == "/api/1c/monthly-preview":
+                if not ACTIVE_CONNECTION:
+                    raise ValueError("Сначала подтвердите подключение к 1С на странице «Подключения».")
+                self.send_json(HTTPStatus.OK, {"ok": True, "operations": account_preview(ACTIVE_CONNECTION["odataUrl"], ACTIVE_CONNECTION["token"], 300)})
                 return
             username = str(payload.get("username", "")).strip()
             password = str(payload.get("password", ""))
@@ -224,7 +246,7 @@ class Handler(SimpleHTTPRequestHandler):
             result.update({"ok": True, "odataUrl": odata_url})
             ACTIVE_CONNECTION.update({"odataUrl": odata_url, "token": token})
             if self.path == "/api/1c/bank-preview":
-                result["operations"] = bank_preview(odata_url, token, min(max(int(payload.get("limit", 10)), 1), 10))
+                result["operations"] = account_preview(odata_url, token, min(max(int(payload.get("limit", 10)), 1), 10))
             self.send_json(HTTPStatus.OK, result)
         except urllib.error.HTTPError as error:
             messages = {
