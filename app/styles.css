@@ -90,6 +90,16 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 .employee-status.ready, .sync-found { color: #22664e; background: #e7f5ed; }
 .employee-status.building { color: #695a27; background: #fff4ce; }
 .disabled-button { opacity: .65; cursor: default; }
+.checkpoint { color: var(--navy-light); font-weight: 650; font-size: .8125rem; }
+.chief-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 18px; padding: 20px; border-radius: 14px; background: #edf0fa; border: 1px solid #bac5e6; }
+.chief-summary p, .agent-brief p { color: var(--muted); margin-top: 6px; max-width: 760px; }
+.agent-brief { margin-top: 18px; padding: 20px; }
+.subnav { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0; }
+.subnav a { text-decoration: none; border: 1px solid var(--line); background: var(--surface); color: var(--navy); border-radius: 9px; padding: 8px 12px; font-weight: 650; font-size: .875rem; }
+.subnav a[aria-current] { background: #edf0fa; border-color: #bac5e6; }
+.action-links { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.action-links a { border-radius: 9px; padding: 9px 12px; color: white; background: var(--navy); text-decoration: none; font-weight: 650; font-size: .875rem; }
+.hero-link { background: var(--orange); color: #18283e; }
 .sync-found, .sync-missing, .sync-unchecked { margin-top: 6px; border-radius: 7px; padding: 3px 5px; width: fit-content; }
 .sync-missing { color: #805018; background: #fff1dc; }
 .sync-unchecked { color: #566276; background: #eff1f5; }
