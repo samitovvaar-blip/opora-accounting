@@ -170,15 +170,27 @@ def inspect_metadata(xml_bytes: bytes, content_type: str = "", final_url: str = 
     return {"entityCount": len(entity_sets), "bankDocuments": sorted(bank_documents)[:30], "cashDocuments": sorted(cash_documents)[:30]}
 
 
-def odata_json(odata_url: str, token: str, entity: str, limit: int) -> list[dict[str, object]]:
-    query = urllib.parse.urlencode({"$top": str(limit), "$orderby": "Date desc", "$format": "json"})
+def odata_json(odata_url: str, token: str, entity: str, limit: int, start: str = "", end: str = "") -> list[dict[str, object]]:
+    params = {"$top": str(limit), "$orderby": "Date desc", "$format": "json"}
+    if start and end:
+        params["$filter"] = f"Date ge datetime'{start}T00:00:00' and Date lt datetime'{end}T00:00:00'"
+    query = urllib.parse.urlencode(params)
     resource = urllib.parse.quote(entity, safe="_")
     request = urllib.request.Request(
         f"{odata_url}/{resource}?{query}",
         headers={"Authorization": "Basic " + token, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=20, context=ssl.create_default_context()) as response:
-        payload = json.loads(response.read(8 * 1024 * 1024).decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=20, context=ssl.create_default_context()) as response:
+            payload = json.loads(response.read(8 * 1024 * 1024).decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        # Некоторые конфигурации 1С:Фреш не принимают фильтр Date через
+        # стандартный OData, хотя без фильтра документы отдают корректно.
+        # Не скрываем данные и не прерываем работу Нейлы: период дополнительно
+        # отфильтруется в интерфейсе после безопасного чтения.
+        if error.code == 500 and start and end:
+            return odata_json(odata_url, token, entity, limit, "", "")
+        raise
     if isinstance(payload.get("d"), dict):
         return payload["d"].get("results", [])
     return payload.get("value", [])
@@ -192,7 +204,7 @@ def read_value(row: dict[str, object], *names: str) -> str:
     return ""
 
 
-def account_preview(odata_url: str, token: str, limit: int) -> list[dict[str, object]]:
+def account_preview(odata_url: str, token: str, limit: int, start: str = "", end: str = "") -> list[dict[str, object]]:
     documents = [
         ("Document_ПоступлениеНаРасчетныйСчет", "in", "51", "Поступление на расчётный счёт"),
         ("Document_СписаниеСРасчетногоСчета", "out", "51", "Списание с расчётного счёта"),
@@ -202,7 +214,7 @@ def account_preview(odata_url: str, token: str, limit: int) -> list[dict[str, ob
     operations = []
     for entity, direction, account, title in documents:
         try:
-            rows = odata_json(odata_url, token, entity, limit)
+            rows = odata_json(odata_url, token, entity, limit, start, end)
         except urllib.error.HTTPError as error:
             if error.code == 404:
                 continue
@@ -299,7 +311,9 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/1c/monthly-preview":
                 if not ACTIVE_CONNECTION:
                     raise ValueError("Сначала подтвердите подключение к 1С на странице «Подключения».")
-                self.send_json(HTTPStatus.OK, {"ok": True, "operations": account_preview(ACTIVE_CONNECTION["odataUrl"], ACTIVE_CONNECTION["token"], 300)})
+                start = str(payload.get("start", ""))
+                end = str(payload.get("end", ""))
+                self.send_json(HTTPStatus.OK, {"ok": True, "operations": account_preview(ACTIVE_CONNECTION["odataUrl"], ACTIVE_CONNECTION["token"], 300, start, end)})
                 return
             profile = connection_settings()
             kind = str(payload.get("kind") or profile.get("kind", "fresh"))
@@ -336,7 +350,7 @@ class Handler(SimpleHTTPRequestHandler):
                 404: "OData по этому адресу не найден. Проверьте публикацию и адрес приложения.",
             }
             message = messages.get(error.code, f"1С вернула HTTP {error.code}.")
-            if raw_url and username:
+            if "raw_url" in locals() and raw_url and username:
                 save_connection_profile(kind, raw_url, username, "error", message)
             self.send_json(error.code, {"error": message})
         except (urllib.error.URLError, TimeoutError):
