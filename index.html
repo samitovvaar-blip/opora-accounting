@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ОПОРА Бухгалтерия</title>
+<link rel="stylesheet" href="app/styles.css">
+<script defer src="app/bank.js"></script>
+<script defer src="app/ui.js"></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="#home"><span class="mark">О</span><span>ОПОРА<small>Бухгалтерия</small></span></a>
+  <nav aria-label="Основная навигация">
+    <a href="#home">Главная</a>
+    <a href="#team">ИИ-сотрудники</a>
+    <a href="#bank">Нейла · Банк</a>
+  </nav>
+  <span class="local">Локальное рабочее место</span>
+</aside>
+<main id="screen" tabindex="-1"></main>
+<dialog id="review" aria-labelledby="review-title">
+  <form id="review-form">
+    <div class="heading"><h2 id="review-title">Разбор операции</h2><button type="button" id="close" class="secondary">Закрыть</button></div>
+    <div id="details"></div>
+    <label for="category">Категория операции</label>
+    <select id="category" required></select>
+    <button id="confirm">Сохранить решение</button>
+  </form>
+</dialog>
+</body>
+</html>
