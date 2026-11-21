@@ -2,8 +2,10 @@
 
 const screen = document.querySelector("#screen");
 const dialog = document.querySelector("#review");
+const taskDialog = document.querySelector("#task-composer");
 const category = document.querySelector("#category");
 const storageKey = "opora-accounting:bank:v1";
+const taskStorageKey = "opora-accounting:tasks:v1";
 const amounts = new Intl.NumberFormat("ru-RU", {style: "currency", currency: "RUB"});
 const dates = new Intl.DateTimeFormat("ru-RU", {timeZone: "UTC"});
 let operations = [];
@@ -16,6 +18,11 @@ let connectionFeedback = "";
 let signedInUser = null;
 let authError = "";
 let connectionState = {saved: false, status: "not_checked"};
+let tasks = [];
+let taskRecipient = "";
+let voiceRecorder = null;
+let voiceChunks = [];
+let voiceUrl = "";
 
 const employees = [
   {name: "Нейла", role: "Банк и касса", status: "Работает", note: "51 и 50: выписки, кассовые ордера, статьи, сверка и черновики.", href: "#neila", avatar: "Н", point: "Обороты 50 / 51 и расхождения"},
@@ -30,6 +37,12 @@ try {
 } catch {
   feedback = "Не удалось прочитать сохранённые операции.";
 }
+try {
+  const storedTasks = JSON.parse(localStorage.getItem(taskStorageKey) || "[]");
+  if (Array.isArray(storedTasks)) tasks = storedTasks;
+} catch {
+  // Задачи не влияют на доступность рабочего места.
+}
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, character => ({
@@ -40,6 +53,16 @@ function escapeHtml(value) {
 function save(next) {
   localStorage.setItem(storageKey, JSON.stringify(next));
   operations = next;
+}
+
+function saveTasks(next) {
+  localStorage.setItem(taskStorageKey, JSON.stringify(next));
+  tasks = next;
+}
+
+function taskButton(name) {
+  const count = tasks.filter(task => task.recipient === name && task.status === "new").length;
+  return `<button class="task-fab" data-task-for="${escapeHtml(name)}" title="Дать задачу ${escapeHtml(name)}" aria-label="Дать задачу ${escapeHtml(name)}">＋${count ? `<span>${count}</span>` : ""}</button>`;
 }
 
 function identity(row) {
@@ -94,14 +117,14 @@ function nonBank(page) {
         <span class="avatar" aria-hidden="true">${employee.avatar}</span>
         <div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div>
         <p class="muted">${employee.note}</p></div>
-        <small class="checkpoint">Контроль: ${employee.point}</small><a class="button" href="${employee.href}">Открыть</a>
+        <small class="checkpoint">Контроль: ${employee.point}</small><div class="employee-actions">${taskButton(employee.name)}<a class="button" href="${employee.href}">Открыть</a></div>
       </article>`).join("")}
     </section>`;
   const employee = employees.find(item => item.name.toLowerCase() === page);
   if (employee) return `
     <div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> ${employee.name}</div>
     <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div><h1>${employee.name}</h1><p>ИИ-бухгалтер: ${employee.role}</p></div></div><span class="employee-status building">В разработке</span></header>
-    <section class="card agent-brief"><h2>Контрольная точка</h2><strong>${employee.point}</strong><p>${employee.note}</p><p class="muted">Интерфейс уже использует тот же цикл, что и у Нейлы: показатели периода, очередь исключений, разбор решения и журнал. Функциональные источники 1С подключим после утверждения правил этого сотрудника.</p></section>`;
+    <section class="card agent-brief"><div class="heading"><h2>Контрольная точка</h2>${taskButton(employee.name)}</div><strong>${employee.point}</strong><p>${employee.note}</p><p class="muted">Интерфейс уже использует тот же цикл, что и у Нейлы: показатели периода, очередь исключений, разбор решения и журнал. Функциональные источники 1С подключим после утверждения правил этого сотрудника.</p></section>`;
   return `
     <div class="breadcrumb">Рабочее пространство</div>
     <header class="hero">
@@ -109,7 +132,7 @@ function nonBank(page) {
     </header>
     <section class="metrics" aria-label="Ситуация по периоду"><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют решения</span><strong>${counts.review + counts.unknown}</strong></div><div class="card metric"><span>Расхождения с 1С</span><strong>${operations.filter(row => row.syncState === "missing").length}</strong></div><div class="card metric"><span>ИИ-сотрудников</span><strong>${employees.length}</strong></div></section>
     <section class="chief-summary"><div><h2>Сводка заместителя главбуха</h2><p>Сначала разберите исключения по 50 / 51, затем переходите к первичке, взаиморасчётам и отчётности. Общая оборотка станет единым источником контрольных точек для всех сотрудников.</p></div><a class="button" href="#neila">Открыть очередь Нейлы</a></section>
-    <section class="employee-grid" aria-label="Статусы ИИ-сотрудников">${employees.map(employee => `<article class="card employee employee-card"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div><p class="checkpoint">${employee.point}</p><p class="muted">${employee.note}</p></div><a class="button" href="${employee.href}">Открыть</a></article>`).join("")}</section>`;
+    <section class="employee-grid" aria-label="Статусы ИИ-сотрудников">${employees.map(employee => `<article class="card employee employee-card"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div><p class="checkpoint">${employee.point}</p><p class="muted">${employee.note}</p></div><div class="employee-actions">${taskButton(employee.name)}<a class="button" href="${employee.href}">Открыть</a></div></article>`).join("")}</section>`;
 }
 
 function operationTable(rows) {
@@ -168,7 +191,7 @@ function neilaHub() {
   const waiting = operations.filter(row => ["review", "unknown"].includes(row.status)).length;
   return `
     <div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> Нейла</div>
-    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>Нейла</h1><p>ИИ-бухгалтер по банку и кассе</p></div></div><a class="button hero-link" href="#neila-control">Контроль счетов</a></header>
+    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>Нейла</h1><p>ИИ-бухгалтер по банку и кассе</p></div></div><div class="hero-actions">${taskButton("Нейла")}<a class="button hero-link" href="#neila-control">Контроль счетов</a></div></header>
     ${neilaTabs("hub")}
     <section class="metrics"><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>На проверке</span><strong>${waiting}</strong></div><div class="card metric"><span>Счёт 51</span><strong>${operations.filter(row => (row.account || "51") === "51").length}</strong></div><div class="card metric"><span>Счёт 50</span><strong>${operations.filter(row => row.account === "50").length}</strong></div></section>
     <section class="card agent-brief"><h2>Зона ответственности Нейлы</h2><p>Корректность движения по 51 и 50: наличие документа, статья движения, контрагент, назначение, совпадение с выпиской и кассовыми ордерами.</p><div class="action-links"><a href="#neila-bank">Банк · 51</a><a href="#neila-cash">Касса · 50</a><a href="#neila-control">Контроль счетов</a></div></section>`;
@@ -181,7 +204,7 @@ function analyticsPage() {
   const isSecureWorkspace = ["localhost", "127.0.0.1"].includes(location.hostname);
   return `
     <div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> Контроль 50 / 51</div>
-    <header class="hero"><div><h1>Нейла · Банк и касса</h1><p>Ежемесячный контроль операций по счетам 50 и 51</p></div>${isSecureWorkspace ? '<button id="load-1c-months">Обновить из 1С</button>' : ""}</header>
+    <header class="hero"><div><h1>Нейла · Банк и касса</h1><p>Ежемесячный контроль операций по счетам 50 и 51</p></div><div class="hero-actions">${taskButton("Нейла")}${isSecureWorkspace ? '<button id="load-1c-months">Обновить из 1С</button>' : ""}</div></header>
     ${neilaTabs("neila-control")}
     <section class="metrics" aria-label="Итоги контроля"><div class="card metric"><span>Чистый поток · 51</span><strong>${money(bank)}</strong></div><div class="card metric"><span>Чистый поток · 50</span><strong>${money(cash)}</strong></div><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют внимания</span><strong>${flagged}</strong></div></section>
     <section class="control-note"><strong>Что делает Нейла</strong><span>Собирает банковские документы и кассовые ордера из 1С, классифицирует статьи, показывает обороты по месяцам и выделяет операции без документа или решения.</span></section>
@@ -213,7 +236,7 @@ function bankPage(account = "51") {
     <div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> ${isCash ? "Касса" : "Банк"}</div>
     <header class="hero">
       <div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>${isCash ? "Касса · 50" : "Банк · 51"}</h1><p>Нейла · ИИ-бухгалтер по банку и кассе</p></div></div>
-      ${isCash ? "" : '<button id="upload">+ Загрузить выписку</button>'}
+      <div class="hero-actions">${taskButton("Нейла")}${isCash ? "" : '<button id="upload">+ Загрузить выписку</button>'}</div>
       <input type="file" id="file" accept=".txt,.csv" hidden aria-label="Файл банковской выписки">
     </header>
     ${neilaTabs(isCash ? "neila-cash" : "neila-bank")}
@@ -400,6 +423,50 @@ function openItem(index) {
   dialog.showModal();
 }
 
+function openTaskComposer(recipient) {
+  taskRecipient = recipient;
+  voiceUrl = "";
+  document.querySelector("#task-recipient").textContent = `Получатель: ${recipient}`;
+  document.querySelector("#task-text").value = "";
+  document.querySelector("#voice-preview").hidden = true;
+  document.querySelector("#voice-status").textContent = "";
+  document.querySelector("#record-voice").textContent = "● Записать голосовое";
+  taskDialog.showModal();
+}
+
+async function toggleVoiceRecording() {
+  const button = document.querySelector("#record-voice");
+  const status = document.querySelector("#voice-status");
+  if (voiceRecorder?.state === "recording") {
+    voiceRecorder.stop();
+    button.disabled = true;
+    status.textContent = "Сохраняем запись…";
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    voiceChunks = [];
+    voiceRecorder = new MediaRecorder(stream);
+    voiceRecorder.addEventListener("dataavailable", event => { if (event.data.size) voiceChunks.push(event.data); });
+    voiceRecorder.addEventListener("stop", () => {
+      const blob = new Blob(voiceChunks, {type: voiceRecorder.mimeType || "audio/webm"});
+      voiceUrl = URL.createObjectURL(blob);
+      const player = document.querySelector("#voice-preview");
+      player.src = voiceUrl;
+      player.hidden = false;
+      status.textContent = "Голосовое прикреплено к задаче в этом рабочем месте.";
+      button.disabled = false;
+      button.textContent = "● Перезаписать голосовое";
+      stream.getTracks().forEach(track => track.stop());
+    });
+    voiceRecorder.start();
+    button.textContent = "■ Остановить запись";
+    status.textContent = "Идёт запись…";
+  } catch {
+    status.textContent = "Не удалось включить микрофон. Проверьте разрешение браузера.";
+  }
+}
+
 screen.addEventListener("click", event => {
   const button = event.target.closest("button");
   if (!button) return;
@@ -411,6 +478,7 @@ screen.addEventListener("click", event => {
   }, "Демонстрационная выписка");
   if (button.id === "reconcile") reconcileWith1C(button);
   if (button.id === "load-1c-months") loadMonthlyControl(button);
+  if (button.dataset.taskFor) openTaskComposer(button.dataset.taskFor);
   if (button.dataset.filter) {
     filter = button.dataset.filter;
     render();
@@ -511,6 +579,17 @@ screen.addEventListener("input", event => {
 });
 
 document.querySelector("#close").addEventListener("click", () => dialog.close());
+document.querySelector("#close-task").addEventListener("click", () => taskDialog.close());
+document.querySelector("#record-voice").addEventListener("click", toggleVoiceRecording);
+document.querySelector("#task-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const text = document.querySelector("#task-text").value.trim();
+  if (!text || !taskRecipient) return;
+  saveTasks([{id: crypto.randomUUID(), recipient: taskRecipient, text, hasVoice: Boolean(voiceUrl), status: "new", createdAt: new Date().toISOString()}, ...tasks]);
+  feedback = `Задача для ${taskRecipient} добавлена в очередь.${voiceUrl ? " Голосовое прикреплено в текущем рабочем месте." : ""}`;
+  taskDialog.close();
+  render();
+});
 document.querySelector("#review-form").addEventListener("submit", event => {
   event.preventDefault();
   try {
