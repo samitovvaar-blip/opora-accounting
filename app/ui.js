@@ -17,10 +17,10 @@ let signedInUser = null;
 let authError = "";
 
 const employees = [
-  {name: "Нейла", role: "ИИ-бухгалтер по банку", status: "Работает", note: "Разбирает выписки, сверяет операции с 1С и готовит черновики документов.", href: "#bank", avatar: "Н"},
-  {name: "Марта", role: "ИИ-бухгалтер по первичным документам", status: "В разработке", note: "Будет сопоставлять поступления с УПД, счетами и актами.", avatar: "М"},
-  {name: "Лев", role: "ИИ-бухгалтер по взаиморасчётам", status: "В разработке", note: "Будет находить расхождения с контрагентами и собирать акты сверки.", avatar: "Л"},
-  {name: "Рита", role: "ИИ-бухгалтер по отчётности", status: "В разработке", note: "Будет контролировать сроки, проверки и готовность отчётности.", avatar: "Р"},
+  {name: "Нейла", role: "Банк и касса", status: "Работает", note: "51 и 50: выписки, кассовые ордера, статьи, сверка и черновики.", href: "#neila", avatar: "Н", point: "Обороты 50 / 51 и расхождения"},
+  {name: "Марта", role: "Первичные документы", status: "В разработке", note: "Поступления, реализации, УПД, счета и акты.", href: "#marta", avatar: "М", point: "Документы без основания и закрывающих"},
+  {name: "Лев", role: "Взаиморасчёты", status: "В разработке", note: "Контрагенты, договоры, авансы и акты сверки.", href: "#lev", avatar: "Л", point: "Просроченная дебиторка и кредиторка"},
+  {name: "Рита", role: "Отчётность", status: "В разработке", note: "Периоды, контрольные соотношения и готовность отчётов.", href: "#rita", avatar: "Р", point: "Сроки и ошибки перед сдачей"},
 ];
 
 try {
@@ -75,26 +75,28 @@ function nonBank(page) {
   const counts = stats();
   if (page === "team") return `
     <div class="breadcrumb">Рабочее пространство <span aria-hidden="true">/</span> ИИ-сотрудники</div>
-    <header class="hero"><div><h1>ИИ-сотрудники</h1><p>Цифровая бухгалтерская команда ОПОРЫ</p></div></header>
+    <header class="hero"><div><h1>ИИ-сотрудники</h1><p>Единый формат работы: контрольная точка → очередь → решение → журнал.</p></div></header>
     <section class="employee-grid" aria-label="Сотрудники ОПОРЫ">
       ${employees.map(employee => `<article class="card employee employee-card">
         <span class="avatar" aria-hidden="true">${employee.avatar}</span>
         <div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div>
         <p class="muted">${employee.note}</p></div>
-        ${employee.href ? `<a class="button" href="${employee.href}">Открыть</a>` : `<span class="secondary disabled-button">Скоро</span>`}
+        <small class="checkpoint">Контроль: ${employee.point}</small><a class="button" href="${employee.href}">Открыть</a>
       </article>`).join("")}
     </section>`;
+  const employee = employees.find(item => item.name.toLowerCase() === page);
+  if (employee) return `
+    <div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> ${employee.name}</div>
+    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div><h1>${employee.name}</h1><p>ИИ-бухгалтер: ${employee.role}</p></div></div><span class="employee-status building">В разработке</span></header>
+    <section class="card agent-brief"><h2>Контрольная точка</h2><strong>${employee.point}</strong><p>${employee.note}</p><p class="muted">Интерфейс уже использует тот же цикл, что и у Нейлы: показатели периода, очередь исключений, разбор решения и журнал. Функциональные источники 1С подключим после утверждения правил этого сотрудника.</p></section>`;
   return `
     <div class="breadcrumb">Рабочее пространство</div>
     <header class="hero">
-      <div><h1>ОПОРА Бухгалтерия</h1><p>Рабочее пространство для бухгалтеров</p></div>
+      <div><h1>Главная</h1><p>Рабочее место заместителя главного бухгалтера</p></div>
     </header>
-    <section class="card employee">
-      <span class="avatar" aria-hidden="true">Н</span>
-      <div><h2>Нейла</h2><p>ИИ-бухгалтер по банку</p>
-      <p class="muted">${operations.length ? `Операций в очереди: ${counts.review + counts.unknown}` : "Импорт выписок и проверка банковских операций"}</p></div>
-      <a class="button" href="#bank">Открыть рабочее место</a>
-    </section>`;
+    <section class="metrics" aria-label="Ситуация по периоду"><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют решения</span><strong>${counts.review + counts.unknown}</strong></div><div class="card metric"><span>Расхождения с 1С</span><strong>${operations.filter(row => row.syncState === "missing").length}</strong></div><div class="card metric"><span>ИИ-сотрудников</span><strong>${employees.length}</strong></div></section>
+    <section class="chief-summary"><div><h2>Сводка заместителя главбуха</h2><p>Сначала разберите исключения по 50 / 51, затем переходите к первичке, взаиморасчётам и отчётности. Общая оборотка станет единым источником контрольных точек для всех сотрудников.</p></div><a class="button" href="#neila">Открыть очередь Нейлы</a></section>
+    <section class="employee-grid" aria-label="Статусы ИИ-сотрудников">${employees.map(employee => `<article class="card employee employee-card"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div><p class="checkpoint">${employee.point}</p><p class="muted">${employee.note}</p></div><a class="button" href="${employee.href}">Открыть</a></article>`).join("")}</section>`;
 }
 
 function operationTable(rows) {
@@ -144,14 +146,30 @@ function analyticsTable(account) {
   return `<div class="table-wrap"><table><thead><tr><th>Месяц</th><th>Поступления</th><th>Расходы</th><th>Операций</th><th>На проверке</th><th>Расхождения с 1С</th></tr></thead><tbody>${rows.map(row => `<tr><td><strong>${escapeHtml(monthLabel(row.month))}</strong></td><td class="amount in">+${money(row.incoming)}</td><td class="amount">−${money(row.outgoing)}</td><td>${row.count}</td><td>${row.review || "—"}</td><td>${row.missing ? `<span class="sync-missing">${row.missing}</span>` : "—"}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
+function neilaTabs(active) {
+  const tabs = [["neila-bank", "Банк"], ["neila-cash", "Касса"], ["neila-control", "Контроль счетов"]];
+  return `<nav class="subnav" aria-label="Разделы Нейлы">${tabs.map(([href, label]) => `<a href="#${href}" ${active === href ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
+}
+
+function neilaHub() {
+  const waiting = operations.filter(row => ["review", "unknown"].includes(row.status)).length;
+  return `
+    <div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> Нейла</div>
+    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>Нейла</h1><p>ИИ-бухгалтер по банку и кассе</p></div></div><a class="button hero-link" href="#neila-control">Контроль счетов</a></header>
+    ${neilaTabs("hub")}
+    <section class="metrics"><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>На проверке</span><strong>${waiting}</strong></div><div class="card metric"><span>Счёт 51</span><strong>${operations.filter(row => (row.account || "51") === "51").length}</strong></div><div class="card metric"><span>Счёт 50</span><strong>${operations.filter(row => row.account === "50").length}</strong></div></section>
+    <section class="card agent-brief"><h2>Зона ответственности Нейлы</h2><p>Корректность движения по 51 и 50: наличие документа, статья движения, контрагент, назначение, совпадение с выпиской и кассовыми ордерами.</p><div class="action-links"><a href="#neila-bank">Банк · 51</a><a href="#neila-cash">Касса · 50</a><a href="#neila-control">Контроль счетов</a></div></section>`;
+}
+
 function analyticsPage() {
   const bank = monthlyRows("51").reduce((sum, row) => sum + row.incoming - row.outgoing, 0);
   const cash = monthlyRows("50").reduce((sum, row) => sum + row.incoming - row.outgoing, 0);
   const flagged = operations.filter(row => ["review", "unknown"].includes(row.status) || row.syncState === "missing").length;
   const isSecureWorkspace = ["localhost", "127.0.0.1"].includes(location.hostname);
   return `
-    <div class="breadcrumb"><a href="#team">ИИ-сотрудники</a><span aria-hidden="true">/</span> Контроль 50 / 51</div>
+    <div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> Контроль 50 / 51</div>
     <header class="hero"><div><h1>Нейла · Банк и касса</h1><p>Ежемесячный контроль операций по счетам 50 и 51</p></div>${isSecureWorkspace ? '<button id="load-1c-months">Обновить из 1С</button>' : ""}</header>
+    ${neilaTabs("neila-control")}
     <section class="metrics" aria-label="Итоги контроля"><div class="card metric"><span>Чистый поток · 51</span><strong>${money(bank)}</strong></div><div class="card metric"><span>Чистый поток · 50</span><strong>${money(cash)}</strong></div><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют внимания</span><strong>${flagged}</strong></div></section>
     <section class="control-note"><strong>Что делает Нейла</strong><span>Собирает банковские документы и кассовые ордера из 1С, классифицирует статьи, показывает обороты по месяцам и выделяет операции без документа или решения.</span></section>
     <section class="card analytics-card"><div class="ledger-heading"><div><h2>Счёт 51 · Расчётные счета</h2><p class="muted">Источник: поступления и списания с расчётного счёта в 1С, либо загруженная банковская выписка.</p></div></div>${analyticsTable("51")}</section>
@@ -159,8 +177,10 @@ function analyticsPage() {
     <section class="card data-map"><h2>Контур данных Нейлы</h2><div><strong>51 · Банк:</strong> API банка / файл выписки → документы 1С → Нейла → сверка, статьи, черновики.</div><div><strong>50 · Касса:</strong> ПКО и РКО 1С → Нейла → контроль статей и расхождений. В будущем: Мой ОФД → сверка фискальных чеков с кассой.</div><p class="muted">Нейла не проводит документы автоматически. Создание или изменение черновика всегда будет отдельным подтверждаемым действием бухгалтера.</p></section>`;
 }
 
-function bankPage() {
-  const counts = stats();
+function bankPage(account = "51") {
+  const isCash = account === "50";
+  const scope = operations.filter(row => (row.account || "51") === account);
+  const counts = Object.fromEntries(Object.keys(Bank.status).map(status => [status, scope.filter(row => row.status === status).length]));
   const queueSize = counts.review + counts.unknown;
   const rate = operations.length ? `${new Intl.NumberFormat("ru-RU", {maximumFractionDigits: 1}).format(counts.auto / operations.length * 100)}%` : "—";
   const pending = row => ["review", "unknown"].includes(row.status);
@@ -168,26 +188,27 @@ function bankPage() {
   const found = row => !needle || [row.counterparty, row.purpose, row.category, String(row.kopecks / 100).replace(".", ",")]
     .some(value => String(value || "").toLowerCase().replace(/\s/g, "").includes(needle));
   const rows = operations.map((row, index) => ({row, index}))
-    .filter(({row}) => (filter === "all" || pending(row)) && found(row))
+    .filter(({row}) => (row.account || "51") === account && (filter === "all" || pending(row)) && found(row))
     .sort((a, b) => b.row.date.localeCompare(a.row.date));
-  const metrics = [["Всего операций", operations.length], ["Распознано автоматически", counts.auto], ["В очереди на проверку", queueSize], ["Доля автораспознавания", rate]];
-  const sync = operations.reduce((result, row) => {
+  const metrics = [["Всего операций", scope.length], ["Распознано автоматически", counts.auto], ["В очереди на проверку", queueSize], ["Доля автораспознавания", rate]];
+  const sync = scope.reduce((result, row) => {
     result[row.syncState || "unchecked"]++;
     return result;
   }, {matched: 0, missing: 0, unchecked: 0});
   const isSecureWorkspace = ["localhost", "127.0.0.1"].includes(location.hostname);
   return `
-    <div class="breadcrumb"><a href="#team">ИИ-сотрудники</a><span aria-hidden="true">/</span> Банк</div>
+    <div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> ${isCash ? "Касса" : "Банк"}</div>
     <header class="hero">
-      <div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>Нейла</h1><p>ИИ-бухгалтер по банку</p></div></div>
-      <button id="upload">+ Загрузить выписку</button>
+      <div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>${isCash ? "Касса · 50" : "Банк · 51"}</h1><p>Нейла · ИИ-бухгалтер по банку и кассе</p></div></div>
+      ${isCash ? "" : '<button id="upload">+ Загрузить выписку</button>'}
       <input type="file" id="file" accept=".txt,.csv" hidden aria-label="Файл банковской выписки">
     </header>
-    <div class="import-info"><span>CSV по образцу или TXT в формате 1С</span><a href="examples/vypiska.csv" download>Скачать образец CSV</a><button class="text-button" id="demo">Открыть демо</button></div>
+    ${neilaTabs(isCash ? "neila-cash" : "neila-bank")}
+    <div class="import-info"><span>${isCash ? "Источник: ПКО и РКО в 1С; Мой ОФД будет добавлен как сверочный источник." : "CSV по образцу или TXT в формате 1С"}</span>${isCash ? "" : '<a href="examples/vypiska.csv" download>Скачать образец CSV</a><button class="text-button" id="demo">Открыть демо</button>'}</div>
     <p class="feedback" role="status">${escapeHtml(feedback)}</p>
     <section class="metrics" aria-label="Итоги обработки">${metrics.map(([label, value]) => `<div class="card metric"><span>${label}</span><strong>${value}</strong></div>`).join("")}</section>
     <section class="card ledger" aria-labelledby="ledger-title">
-      <div class="ledger-heading"><div><h2 id="ledger-title">Банковские операции</h2><p class="muted">Нейла классифицирует выписку, сверяет её с 1С и готовит черновики. Проведённые документы не изменяются.</p></div>
+      <div class="ledger-heading"><div><h2 id="ledger-title">${isCash ? "Кассовые операции" : "Банковские операции"}</h2><p class="muted">${isCash ? "Нейла контролирует ПКО, РКО и статьи движения по кассе." : "Нейла классифицирует выписку, сверяет её с 1С и готовит черновики."} Проведённые документы не изменяются.</p></div>
         <div class="filters" aria-label="Фильтр операций">
           <button class="secondary" aria-pressed="${filter === "all"}" data-filter="all">Все операции</button>
           <button class="secondary" aria-pressed="${filter === "queue"}" data-filter="queue">На проверку · ${queueSize}</button>
@@ -242,12 +263,12 @@ function connectionsPage() {
 }
 
 function render() {
-  const page = ["team", "bank", "analytics", "connections"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
+  const page = ["team", "bank", "analytics", "connections", "neila", "neila-bank", "neila-cash", "neila-control", "marta", "lev", "rita"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
   document.querySelectorAll("nav a").forEach(link => {
     if (link.hash === `#${page}`) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  screen.innerHTML = page === "bank" ? bankPage() : page === "analytics" ? analyticsPage() : page === "connections" ? connectionsPage() : nonBank(page);
+  screen.innerHTML = page === "bank" || page === "neila-bank" ? bankPage("51") : page === "neila-cash" ? bankPage("50") : page === "analytics" || page === "neila-control" ? analyticsPage() : page === "neila" ? neilaHub() : page === "connections" ? connectionsPage() : nonBank(page);
   renderAccount();
 }
 
