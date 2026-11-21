@@ -25,13 +25,13 @@ const Bank = (() => {
     // General payment language often appears alongside a more specific category.
     const specific = matches.filter(([name]) => !name.startsWith("Оплата "));
     const candidates = specific.length ? specific : matches;
-    if (!candidates.length) return {...operation, category: "", score: null, status: "unknown", reason: "В назначении платежа нет признаков знакомой категории."};
+    if (!candidates.length) return {...operation, category: "", score: null, status: "unknown", source: "Не определён", reason: "В назначении платежа нет признаков знакомой категории."};
     const [category, , , confidence] = candidates[0];
     const score = candidates.length === 1 ? confidence : Math.min(70, confidence);
     const reason = candidates.length === 1
       ? "Категория предложена по назначению и направлению платежа."
       : "В назначении найдены признаки нескольких категорий.";
-    return {...operation, category, score, reason, status: score >= 90 ? "auto" : "review"};
+    return {...operation, category, score, reason, source: "Правило Нейлы", status: score >= 90 ? "auto" : "review"};
   }
 
   function csvRows(text) {

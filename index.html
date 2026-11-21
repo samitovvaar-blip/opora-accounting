@@ -6,6 +6,7 @@
 <title>ОПОРА Бухгалтерия</title>
 <link rel="stylesheet" href="app/styles.css">
 <script defer src="app/bank.js"></script>
+<script type="module" src="app/firebase.js"></script>
 <script defer src="app/ui.js"></script>
 </head>
 <body>
@@ -17,7 +18,8 @@
     <a href="#bank">Нейла · Банк</a>
     <a href="#connections">Подключения</a>
   </nav>
-  <span class="local">Локальное рабочее место</span>
+  <div id="account" class="account" aria-live="polite"></div>
+  <span class="local">Защищённое рабочее место</span>
 </aside>
 <main id="screen" tabindex="-1"></main>
 <dialog id="review" aria-labelledby="review-title">

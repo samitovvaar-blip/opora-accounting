@@ -8,9 +8,20 @@ const amounts = new Intl.NumberFormat("ru-RU", {style: "currency", currency: "RU
 const dates = new Intl.DateTimeFormat("ru-RU", {timeZone: "UTC"});
 let operations = [];
 let filter = "all";
+let query = "";
+let selectedRows = new Set();
 let selected = null;
 let feedback = "";
 let connectionFeedback = "";
+let signedInUser = null;
+let authError = "";
+
+const employees = [
+  {name: "Нейла", role: "ИИ-бухгалтер по банку", status: "Работает", note: "Разбирает выписки, сверяет операции с 1С и готовит черновики документов.", href: "#bank", avatar: "Н"},
+  {name: "Марта", role: "ИИ-бухгалтер по первичным документам", status: "В разработке", note: "Будет сопоставлять поступления с УПД, счетами и актами.", avatar: "М"},
+  {name: "Лев", role: "ИИ-бухгалтер по взаиморасчётам", status: "В разработке", note: "Будет находить расхождения с контрагентами и собирать акты сверки.", avatar: "Л"},
+  {name: "Рита", role: "ИИ-бухгалтер по отчётности", status: "В разработке", note: "Будет контролировать сроки, проверки и готовность отчётности.", avatar: "Р"},
+];
 
 try {
   const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
@@ -50,13 +61,33 @@ function badge(status) {
   return `<span class="badge ${status}">${Bank.status[status]}</span>`;
 }
 
+function renderAccount() {
+  const account = document.querySelector("#account");
+  if (!account) return;
+  if (signedInUser) {
+    account.innerHTML = `<span class="account-name">${escapeHtml(signedInUser.name)}</span><span class="account-email">${escapeHtml(signedInUser.email)}</span><button class="secondary" id="sign-out">Выйти</button>`;
+    return;
+  }
+  account.innerHTML = `<button id="sign-in">Войти через Google</button>${authError ? `<small class="feedback">${escapeHtml(authError)}</small>` : ""}`;
+}
+
 function nonBank(page) {
   const counts = stats();
+  if (page === "team") return `
+    <div class="breadcrumb">Рабочее пространство <span aria-hidden="true">/</span> ИИ-сотрудники</div>
+    <header class="hero"><div><h1>ИИ-сотрудники</h1><p>Цифровая бухгалтерская команда ОПОРЫ</p></div></header>
+    <section class="employee-grid" aria-label="Сотрудники ОПОРЫ">
+      ${employees.map(employee => `<article class="card employee employee-card">
+        <span class="avatar" aria-hidden="true">${employee.avatar}</span>
+        <div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div>
+        <p class="muted">${employee.note}</p></div>
+        ${employee.href ? `<a class="button" href="${employee.href}">Открыть</a>` : `<span class="secondary disabled-button">Скоро</span>`}
+      </article>`).join("")}
+    </section>`;
   return `
     <div class="breadcrumb">Рабочее пространство</div>
     <header class="hero">
-      <div><h1>${page === "team" ? "ИИ-сотрудники" : "ОПОРА Бухгалтерия"}</h1>
-      <p>${page === "team" ? "Цифровые сотрудники бухгалтерии" : "Рабочее пространство для бухгалтеров"}</p></div>
+      <div><h1>ОПОРА Бухгалтерия</h1><p>Рабочее пространство для бухгалтеров</p></div>
     </header>
     <section class="card employee">
       <span class="avatar" aria-hidden="true">Н</span>
@@ -69,13 +100,14 @@ function nonBank(page) {
 function operationTable(rows) {
   if (!rows.length) return `<div class="empty"><strong>${operations.length ? "В этой очереди пока пусто" : "Выписок пока нет"}</strong><p>${operations.length ? "Все загруженные записи доступны во вкладке «Все операции»." : "Загрузите банковскую выписку или попробуйте демонстрационный файл."}</p></div>`;
   return `<div class="table-wrap" tabindex="0" role="region" aria-label="Список банковских операций"><table>
-    <thead><tr><th scope="col">Дата</th><th scope="col">Контрагент и назначение</th><th scope="col">Сумма</th><th scope="col">Категория</th><th scope="col">Статус</th><th scope="col"><span class="sr-only">Действие</span></th></tr></thead>
+    <thead><tr><th scope="col"><input id="select-visible" type="checkbox" aria-label="Выбрать все показанные операции" ${rows.length && rows.every(({index}) => selectedRows.has(index)) ? "checked" : ""}></th><th scope="col">Дата</th><th scope="col">Контрагент и назначение</th><th scope="col">Сумма</th><th scope="col">Категория</th><th scope="col">Статус</th><th scope="col"><span class="sr-only">Действие</span></th></tr></thead>
     <tbody>${rows.map(({row, index}) => `<tr>
+      <td><input class="row-select" type="checkbox" data-select="${index}" aria-label="Выбрать операцию" ${selectedRows.has(index) ? "checked" : ""}></td>
       <td class="nowrap">${formatDate(row.date)}</td>
-      <td><strong>${escapeHtml(row.counterparty || "Контрагент не указан")}</strong><small>${escapeHtml(row.purpose || "Назначение не указано")}</small></td>
+      <td><strong>${escapeHtml(row.counterparty || "Контрагент не указан")}</strong><small>${escapeHtml(row.purpose || "Назначение не указано")}</small><small>Документ: ${escapeHtml(row.origin || "Загруженная выписка")}</small></td>
       <td class="nowrap amount ${row.direction}">${amount(row)}</td>
-      <td>${escapeHtml(row.category || "—")}${row.score === null ? "" : `<small>Уверенность ${row.score}%</small>`}</td>
-      <td>${badge(row.status)}</td>
+      <td>${escapeHtml(row.category || "—")}${row.score === null ? "" : `<small>Уверенность ${row.score}%</small>`}<small>Источник: ${escapeHtml(row.source || "Правило Нейлы")}</small></td>
+      <td>${badge(row.status)}${row.syncState === "matched" ? `<small class="sync-found">1С: документ № ${escapeHtml(row.syncDocumentNumber || "найден")}</small>` : row.syncState === "missing" ? '<small class="sync-missing">1С: документ не найден</small>' : '<small>1С: не сверено</small>'}</td>
       <td><button class="secondary" data-review="${index}">${["review", "unknown"].includes(row.status) ? "Разобрать" : "Открыть"}</button></td>
     </tr>`).join("")}</tbody>
   </table></div>`;
@@ -86,8 +118,11 @@ function bankPage() {
   const queueSize = counts.review + counts.unknown;
   const rate = operations.length ? `${new Intl.NumberFormat("ru-RU", {maximumFractionDigits: 1}).format(counts.auto / operations.length * 100)}%` : "—";
   const pending = row => ["review", "unknown"].includes(row.status);
+  const needle = query.trim().toLowerCase().replace(/\s/g, "");
+  const found = row => !needle || [row.counterparty, row.purpose, row.category, String(row.kopecks / 100).replace(".", ",")]
+    .some(value => String(value || "").toLowerCase().replace(/\s/g, "").includes(needle));
   const rows = operations.map((row, index) => ({row, index}))
-    .filter(({row}) => filter === "all" || pending(row))
+    .filter(({row}) => (filter === "all" || pending(row)) && found(row))
     .sort((a, b) => b.row.date.localeCompare(a.row.date));
   const metrics = [["Всего операций", operations.length], ["Распознано автоматически", counts.auto], ["В очереди на проверку", queueSize], ["Доля автораспознавания", rate]];
   return `
@@ -101,12 +136,13 @@ function bankPage() {
     <p class="feedback" role="status">${escapeHtml(feedback)}</p>
     <section class="metrics" aria-label="Итоги обработки">${metrics.map(([label, value]) => `<div class="card metric"><span>${label}</span><strong>${value}</strong></div>`).join("")}</section>
     <section class="card ledger" aria-labelledby="ledger-title">
-      <div class="ledger-heading"><h2 id="ledger-title">Банковские операции</h2>
+      <div class="ledger-heading"><div><h2 id="ledger-title">Банковские операции</h2><p class="muted">Нейла классифицирует выписку, сверяет её с 1С и готовит черновики. Проведённые документы не изменяются.</p></div>
         <div class="filters" aria-label="Фильтр операций">
           <button class="secondary" aria-pressed="${filter === "all"}" data-filter="all">Все операции</button>
           <button class="secondary" aria-pressed="${filter === "queue"}" data-filter="queue">На проверку · ${queueSize}</button>
         </div>
       </div>
+      <div class="ledger-tools"><input id="operation-search" type="search" placeholder="Поиск по назначению, контрагенту или сумме" value="${escapeHtml(query)}" aria-label="Поиск операций"><button class="secondary" id="reconcile">Сверить с 1С</button><span>${selectedRows.size ? `Выбрано: ${selectedRows.size}` : ""}</span>${selectedRows.size ? '<button class="secondary" id="clear-selection">Снять выделение</button>' : ""}</div>
       ${operationTable(rows)}
     </section>`;
 }
@@ -133,7 +169,8 @@ function connectionsPage() {
         <label>Пароль
           <input name="password" type="password" autocomplete="current-password" required>
         </label>
-        <button type="submit">Проверить подключение</button>
+        <button type="submit" name="action" value="verify">Проверить подключение</button>
+        <button class="secondary" type="submit" name="action" value="preview">Проверить Нейлу на 10 операциях</button>
         <p class="feedback connection-feedback" role="status">${escapeHtml(connectionFeedback)}</p>
       </form>
       <aside class="card setup-guide">
@@ -156,6 +193,7 @@ function render() {
     else link.removeAttribute("aria-current");
   });
   screen.innerHTML = page === "bank" ? bankPage() : page === "connections" ? connectionsPage() : nonBank(page);
+  renderAccount();
 }
 
 screen.addEventListener("submit", async event => {
@@ -167,14 +205,24 @@ screen.addEventListener("submit", async event => {
   connectionFeedback = "Проверяем доступ к OData…";
   form.querySelector(".connection-feedback").textContent = connectionFeedback;
   const data = Object.fromEntries(new FormData(form));
+  const preview = event.submitter?.value === "preview";
   try {
-    const response = await fetch("/api/1c/test", {
+    const response = await fetch(preview ? "/api/1c/bank-preview" : "/api/1c/test", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(data),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Не удалось проверить подключение.");
+    if (preview) {
+      const additions = (result.operations || []).map(operationFrom1C).filter(Boolean).map(Bank.classify);
+      if (!additions.length) throw new Error("1С не вернула подходящих банковских операций для теста.");
+      save([...operations, ...additions]);
+      feedback = `Нейла прочитала ${additions.length} операций из 1С. Ничего в базе не изменено.`;
+      connectionFeedback = "Тест Нейлы завершён. Откройте рабочее место банка, чтобы посмотреть решения.";
+      location.hash = "bank";
+      return;
+    }
     const documents = result.bankDocuments.length
       ? ` Найдены банковские ресурсы: ${result.bankDocuments.join(", ")}.`
       : " Соединение работает, банковские ресурсы пока не открыты в составе OData.";
@@ -182,12 +230,33 @@ screen.addEventListener("submit", async event => {
   } catch (error) {
     connectionFeedback = error.message;
   }
-  form.querySelector('input[name="password"]').value = "";
-  form.querySelector(".connection-feedback").textContent = connectionFeedback;
+  if (location.hash === "connections") {
+    form.querySelector('input[name="password"]').value = "";
+    form.querySelector(".connection-feedback").textContent = connectionFeedback;
+  }
   button.disabled = false;
 });
 
-async function importStatement(read) {
+function operationFrom1C(operation) {
+  const rawDate = String(operation.date || "");
+  const timestamp = rawDate.match(/\/Date\((-?\d+)/);
+  const date = timestamp
+    ? new Date(Number(timestamp[1])).toISOString().slice(0, 10)
+    : rawDate.slice(0, 10);
+  const rawAmount = String(operation.amount || "").replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(rawAmount) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  return {
+    date,
+    kopecks: Math.round(Number(rawAmount) * 100),
+    direction: operation.direction,
+    counterparty: operation.counterparty || "Контрагент не указан",
+    purpose: operation.purpose || `Документ 1С № ${operation.number || "без номера"}`,
+    reference: `1С:${operation.number || ""}:${date}`,
+    origin: `1С: ${operation.direction === "in" ? "Поступление на расчётный счёт" : "Списание с расчётного счёта"}`,
+  };
+}
+
+async function importStatement(read, origin = "Загруженная выписка") {
   const initialPage = location.hash;
   const upload = screen.querySelector("#upload");
   const demo = screen.querySelector("#demo");
@@ -205,7 +274,7 @@ async function importStatement(read) {
       const count = (seen.get(key) || 0) + 1;
       seen.set(key, count);
       return count > (known.get(key) || 0);
-    }).map(Bank.classify);
+    }).map(row => Bank.classify({...row, origin}));
     if (additions.length) save([...operations, ...additions]);
     feedback = `Добавлено операций: ${additions.length}. Уже в списке: ${rows.length - additions.length}.`;
     filter = "all";
@@ -240,22 +309,84 @@ screen.addEventListener("click", event => {
     const response = await fetch("examples/vypiska.csv");
     if (!response.ok) throw new Error("Демонстрационный файл недоступен.");
     return response.arrayBuffer();
-  });
+  }, "Демонстрационная выписка");
+  if (button.id === "reconcile") reconcileWith1C(button);
   if (button.dataset.filter) {
     filter = button.dataset.filter;
     render();
     screen.querySelector(`[data-filter="${filter}"]`).focus();
   }
   if (button.dataset.review !== undefined) openItem(Number(button.dataset.review));
+  if (button.id === "clear-selection") { selectedRows.clear(); render(); }
+});
+
+async function reconcileWith1C(button) {
+  if (!operations.length) return;
+  button.disabled = true;
+  feedback = "Сверяем операции с документами 1С…";
+  render();
+  try {
+    const response = await fetch("/api/1c/reconcile", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({operations: operations.map(row => ({
+        reference: row.reference,
+        date: row.date,
+        direction: row.direction,
+        kopecks: row.kopecks,
+      }))}),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Не удалось выполнить сверку.");
+    const matches = new Map((result.results || []).map(item => [String(item.reference || ""), item]));
+    let foundCount = 0;
+    save(operations.map(row => {
+      const match = matches.get(String(row.reference || ""));
+      if (!match) return row;
+      if (match.state === "matched") foundCount++;
+      return {...row, syncState: match.state, syncDocumentNumber: match.documentNumber || ""};
+    }));
+    feedback = `Сверка завершена: документов найдено в 1С — ${foundCount}; без документа — ${operations.length - foundCount}.`;
+  } catch (error) {
+    feedback = error.message;
+  }
+  render();
+}
+
+document.querySelector(".sidebar").addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  if (button.id === "sign-in") window.NeilaAuth?.signIn();
+  if (button.id === "sign-out") window.NeilaAuth?.signOut();
 });
 
 screen.addEventListener("change", event => {
+  if (event.target.id === "select-visible") {
+    const visible = [...screen.querySelectorAll(".row-select")].map(input => Number(input.dataset.select));
+    visible.forEach(index => event.target.checked ? selectedRows.add(index) : selectedRows.delete(index));
+    render();
+    return;
+  }
+  if (event.target.matches(".row-select")) {
+    const index = Number(event.target.dataset.select);
+    event.target.checked ? selectedRows.add(index) : selectedRows.delete(index);
+    const count = screen.querySelector(".ledger-tools span");
+    if (count) count.textContent = selectedRows.size ? `Выбрано: ${selectedRows.size}` : "";
+    return;
+  }
   const file = event.target.id === "file" && event.target.files[0];
   if (!file) return;
   importStatement(() => {
     if (file.size > 10 * 1024 * 1024) throw new Error("Максимальный размер файла — 10 МБ.");
     return file.arrayBuffer();
-  });
+  }, `Выписка: ${file.name}`);
+});
+
+screen.addEventListener("input", event => {
+  if (event.target.id !== "operation-search") return;
+  query = event.target.value;
+  render();
+  screen.querySelector("#operation-search")?.focus();
 });
 
 document.querySelector("#close").addEventListener("click", () => dialog.close());
@@ -263,7 +394,7 @@ document.querySelector("#review-form").addEventListener("submit", event => {
   event.preventDefault();
   try {
     save(operations.map((row, index) => index === selected
-      ? {...row, category: category.value, score: null, status: "confirmed", reason: "Категория подтверждена бухгалтером."}
+      ? {...row, category: category.value, score: null, status: "confirmed", source: "Подтверждено бухгалтером", reason: "Категория подтверждена бухгалтером."}
       : row));
   } catch {
     document.querySelector("#review-error").textContent = "Браузер не смог сохранить решение.";
@@ -279,5 +410,10 @@ window.addEventListener("hashchange", () => {
   if (dialog.open) dialog.close();
   render();
   screen.focus();
+});
+window.addEventListener("opora-auth", event => {
+  signedInUser = event.detail.user;
+  authError = event.detail.error || "";
+  renderAccount();
 });
 render();
