@@ -90,6 +90,11 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 .employee-status { border-radius: 100px; padding: 4px 8px; font-size: .75rem; font-weight: 700; white-space: nowrap; }
 .employee-status.ready, .sync-found { color: #22664e; background: #e7f5ed; }
 .employee-status.building { color: #695a27; background: #fff4ce; }
+.employee-status.working { color: #195b88; background: #e1f0fb; }
+.employee-status.attention { color: #805018; background: #fff1dc; }
+.employee-status.error { color: #a12b23; background: #fde9e7; }
+.hero-status { margin-top: 9px; }
+.hero-status .employee-status { background: #ffffff2e; color: white; border: 1px solid #ffffff4a; }
 .disabled-button { opacity: .65; cursor: default; }
 .checkpoint { color: var(--navy-light); font-weight: 650; font-size: .8125rem; }
 .chief-summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-top: 18px; padding: 20px; border-radius: 14px; background: #edf0fa; border: 1px solid #bac5e6; }
