@@ -69,6 +69,18 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 .empty p, .muted { color: var(--muted); }
 .employee { margin-top: 18px; padding: 20px; flex-wrap: wrap; }
 .employee .button { margin-left: auto; }
+.compact-hero { padding-block: 28px; }
+.connection-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); gap: 18px; margin-top: 18px; align-items: start; }
+.connection-form, .setup-guide { padding: 20px; }
+.connection-form { display: grid; gap: 16px; }
+.connection-form fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: 18px; flex-wrap: wrap; }
+.connection-form legend { font-weight: 700; margin-bottom: 8px; }
+.connection-form > label { display: grid; gap: 6px; font-weight: 650; }
+.connection-form input[type="url"], .connection-form input[type="text"], .connection-form input:not([type]) , .connection-form input[type="password"] { width: 100%; border: 1px solid #a5b1c4; border-radius: 9px; padding: 10px 12px; font: inherit; color: var(--text); background: var(--surface); }
+.radio { display: flex; align-items: center; gap: 7px; }
+.setup-guide ol { margin: 14px 0 18px; padding-left: 22px; }
+.setup-guide li + li { margin-top: 9px; }
+.connection-feedback { min-height: 1.5em; margin: 0; }
 dialog { width: min(540px, calc(100% - 28px)); border: 1px solid var(--line); border-radius: 16px; padding: 22px; color: var(--text); }
 dialog::backdrop { background: #14294a88; }
 dialog form, #details { display: grid; gap: 10px; }
@@ -79,6 +91,7 @@ select { border: 1px solid #a5b1c4; padding: 9px; border-radius: 8px; max-width:
 #review-error { color: #a12b23; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 950px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 800px) { .connection-grid { grid-template-columns: 1fr; } }
 @media (max-width: 680px) {
   body { display: block; }
   .sidebar { position: static; height: auto; gap: 14px; border-right: 0; border-bottom: 1px solid var(--line); padding: 12px; }

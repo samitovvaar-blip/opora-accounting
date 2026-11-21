@@ -10,6 +10,7 @@ let operations = [];
 let filter = "all";
 let selected = null;
 let feedback = "";
+let connectionFeedback = "";
 
 try {
   const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
@@ -110,14 +111,81 @@ function bankPage() {
     </section>`;
 }
 
+function connectionsPage() {
+  return `
+    <div class="breadcrumb">Настройки <span aria-hidden="true">/</span> Подключения</div>
+    <header class="hero compact-hero">
+      <div><h1>Подключение 1С</h1><p>Один канал обмена для 1С:Фреш и локальной базы</p></div>
+    </header>
+    <section class="connection-grid">
+      <form id="connection-form" class="card connection-form">
+        <fieldset>
+          <legend>Где находится база</legend>
+          <label class="radio"><input type="radio" name="kind" value="fresh" checked> 1С:Фреш</label>
+          <label class="radio"><input type="radio" name="kind" value="local"> Локальная база</label>
+        </fieldset>
+        <label>Адрес приложения 1С
+          <input name="url" type="url" placeholder="https://1cfresh.com/a/bs/12345" autocomplete="url" required>
+        </label>
+        <label>Служебный пользователь
+          <input name="username" autocomplete="username" required>
+        </label>
+        <label>Пароль
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Проверить подключение</button>
+        <p class="feedback connection-feedback" role="status">${escapeHtml(connectionFeedback)}</p>
+      </form>
+      <aside class="card setup-guide">
+        <h2>Что настроить в 1С</h2>
+        <ol>
+          <li>Откройте «Настройки стандартного интерфейса OData».</li>
+          <li>Создайте отдельного служебного пользователя.</li>
+          <li>Разрешите только банковские документы и нужные справочники.</li>
+          <li>Скопируйте адрес приложения и проверьте соединение.</li>
+        </ol>
+        <p class="muted">Пароль используется только для текущей проверки и не сохраняется в браузере или файлах проекта.</p>
+      </aside>
+    </section>`;
+}
+
 function render() {
-  const page = ["team", "bank"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
+  const page = ["team", "bank", "connections"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
   document.querySelectorAll("nav a").forEach(link => {
     if (link.hash === `#${page}`) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  screen.innerHTML = page === "bank" ? bankPage() : nonBank(page);
+  screen.innerHTML = page === "bank" ? bankPage() : page === "connections" ? connectionsPage() : nonBank(page);
 }
+
+screen.addEventListener("submit", async event => {
+  if (event.target.id !== "connection-form") return;
+  event.preventDefault();
+  const form = event.target;
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  connectionFeedback = "Проверяем доступ к OData…";
+  form.querySelector(".connection-feedback").textContent = connectionFeedback;
+  const data = Object.fromEntries(new FormData(form));
+  try {
+    const response = await fetch("/api/1c/test", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(data),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "Не удалось проверить подключение.");
+    const documents = result.bankDocuments.length
+      ? ` Найдены банковские ресурсы: ${result.bankDocuments.join(", ")}.`
+      : " Соединение работает, банковские ресурсы пока не открыты в составе OData.";
+    connectionFeedback = `Подключение работает. Доступно объектов: ${result.entityCount}.${documents}`;
+  } catch (error) {
+    connectionFeedback = error.message;
+  }
+  form.querySelector('input[name="password"]').value = "";
+  form.querySelector(".connection-feedback").textContent = connectionFeedback;
+  button.disabled = false;
+});
 
 async function importStatement(read) {
   const initialPage = location.hash;
