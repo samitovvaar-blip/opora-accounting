@@ -7,8 +7,10 @@ import base64
 import ipaddress
 import json
 import os
+import shutil
 import socket
 import ssl
+import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +25,10 @@ MAX_BODY = 64 * 1024
 MAX_METADATA = 32 * 1024 * 1024
 FRESH_HOSTS = {"1cfresh.com", "www.1cfresh.com"}
 ACTIVE_CONNECTION: dict[str, str] = {}
+SETTINGS_DIR = Path.home() / "Library" / "Application Support" / "OPORA Бухгалтерия"
+CONNECTION_FILE = SETTINGS_DIR / "connection.json"
+KEYCHAIN_SERVICE = "OPORA Бухгалтерия · 1С"
+KEYCHAIN_ACCOUNT = "service-connection"
 
 
 def is_private_host(hostname: str) -> bool:
@@ -64,6 +70,69 @@ def normalize_odata_url(raw_url: str, kind: str) -> str:
         raise ValueError("Неизвестный тип подключения.")
     suffix = "/odata/standard.odata"
     return url if url.endswith(suffix) else url + suffix
+
+
+def connection_settings() -> dict[str, object]:
+    try:
+        return json.loads(CONNECTION_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def write_connection_settings(settings: dict[str, object]) -> None:
+    SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    temp = CONNECTION_FILE.with_suffix(".tmp")
+    temp.write_text(json.dumps(settings, ensure_ascii=False), encoding="utf-8")
+    os.chmod(temp, 0o600)
+    temp.replace(CONNECTION_FILE)
+    os.chmod(CONNECTION_FILE, 0o600)
+
+
+def save_password(password: str) -> None:
+    if not shutil.which("security"):
+        raise ValueError("Сохранение пароля доступно только через Связку ключей macOS.")
+    result = subprocess.run(
+        ["security", "add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w", password],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode:
+        raise ValueError("Не удалось сохранить пароль в Связке ключей macOS.")
+
+
+def saved_password() -> str:
+    if not shutil.which("security"):
+        return ""
+    result = subprocess.run(
+        ["security", "find-generic-password", "-w", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
+        capture_output=True, text=True, check=False,
+    )
+    return result.stdout.rstrip("\n") if result.returncode == 0 else ""
+
+
+def public_connection_status() -> dict[str, object]:
+    settings = connection_settings()
+    return {
+        "saved": bool(settings.get("url") and settings.get("username")),
+        "kind": settings.get("kind", "fresh"),
+        "url": settings.get("url", ""),
+        "username": settings.get("username", ""),
+        "passwordSaved": bool(saved_password()),
+        "status": settings.get("status", "not_checked"),
+        "checkedAt": settings.get("checkedAt", ""),
+        "error": settings.get("error", ""),
+    }
+
+
+def save_connection_profile(kind: str, url: str, username: str, status: str, error: str = "") -> None:
+    from datetime import datetime, timezone
+    write_connection_settings({
+        "kind": kind,
+        "url": url,
+        "username": username,
+        "status": status,
+        "checkedAt": datetime.now(timezone.utc).isoformat(),
+        "error": error,
+    })
 
 
 def inspect_metadata(xml_bytes: bytes, content_type: str = "", final_url: str = "") -> dict[str, object]:
@@ -206,6 +275,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_GET(self) -> None:
+        if self.path == "/api/1c/status":
+            self.send_json(HTTPStatus.OK, public_connection_status())
+            return
+        super().do_GET()
+
     def do_POST(self) -> None:
         if self.path not in {"/api/1c/test", "/api/1c/bank-preview", "/api/1c/monthly-preview", "/api/1c/reconcile"}:
             self.send_json(HTTPStatus.NOT_FOUND, {"error": "Маршрут не найден."})
@@ -226,11 +301,14 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError("Сначала подтвердите подключение к 1С на странице «Подключения».")
                 self.send_json(HTTPStatus.OK, {"ok": True, "operations": account_preview(ACTIVE_CONNECTION["odataUrl"], ACTIVE_CONNECTION["token"], 300)})
                 return
-            username = str(payload.get("username", "")).strip()
-            password = str(payload.get("password", ""))
+            profile = connection_settings()
+            kind = str(payload.get("kind") or profile.get("kind", "fresh"))
+            raw_url = str(payload.get("url") or profile.get("url", ""))
+            username = str(payload.get("username") or profile.get("username", "")).strip()
+            password = str(payload.get("password", "")) or saved_password()
             if not username or not password:
-                raise ValueError("Укажите служебный логин и пароль 1С.")
-            odata_url = normalize_odata_url(str(payload.get("url", "")), str(payload.get("kind", "")))
+                raise ValueError("Укажите служебный логин и пароль 1С или сохраните их в Связке ключей.")
+            odata_url = normalize_odata_url(raw_url, kind)
             token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
             request = urllib.request.Request(
                 odata_url + "/$metadata",
@@ -245,6 +323,9 @@ class Handler(SimpleHTTPRequestHandler):
             result = inspect_metadata(metadata, content_type, final_url)
             result.update({"ok": True, "odataUrl": odata_url})
             ACTIVE_CONNECTION.update({"odataUrl": odata_url, "token": token})
+            if payload.get("remember") and str(payload.get("password", "")):
+                save_password(str(payload["password"]))
+            save_connection_profile(kind, raw_url, username, "connected")
             if self.path == "/api/1c/bank-preview":
                 result["operations"] = account_preview(odata_url, token, min(max(int(payload.get("limit", 10)), 1), 10))
             self.send_json(HTTPStatus.OK, result)
@@ -254,9 +335,15 @@ class Handler(SimpleHTTPRequestHandler):
                 403: "У пользователя нет права удалённого доступа OData.",
                 404: "OData по этому адресу не найден. Проверьте публикацию и адрес приложения.",
             }
-            self.send_json(error.code, {"error": messages.get(error.code, f"1С вернула HTTP {error.code}.")})
+            message = messages.get(error.code, f"1С вернула HTTP {error.code}.")
+            if raw_url and username:
+                save_connection_profile(kind, raw_url, username, "error", message)
+            self.send_json(error.code, {"error": message})
         except (urllib.error.URLError, TimeoutError):
-            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": "Не удалось связаться с 1С. Проверьте адрес, сеть и публикацию."})
+            message = "Не удалось связаться с 1С. Проверьте адрес, сеть и публикацию."
+            if "raw_url" in locals() and raw_url and username:
+                save_connection_profile(kind, raw_url, username, "error", message)
+            self.send_json(HTTPStatus.BAD_GATEWAY, {"error": message})
         except (ValueError, json.JSONDecodeError) as error:
             print(f"OData check rejected: {error}", flush=True)
             self.send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
