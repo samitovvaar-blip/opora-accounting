@@ -23,6 +23,7 @@ let taskRecipient = "";
 let voiceRecorder = null;
 let voiceChunks = [];
 let voiceUrl = "";
+let agentActivity = {Нейла: "idle"};
 
 const employees = [
   {name: "Нейла", role: "Банк и касса", status: "Работает", note: "51 и 50: выписки, кассовые ордера, статьи, сверка и черновики.", href: "#neila", avatar: "Н", point: "Обороты 50 / 51 и расхождения"},
@@ -63,6 +64,25 @@ function saveTasks(next) {
 function taskButton(name) {
   const count = tasks.filter(task => task.recipient === name && task.status === "new").length;
   return `<button class="task-fab" data-task-for="${escapeHtml(name)}" title="Дать задачу ${escapeHtml(name)}" aria-label="Дать задачу ${escapeHtml(name)}">＋${count ? `<span>${count}</span>` : ""}</button>`;
+}
+
+function employeeStatus(employee) {
+  const openTasks = tasks.filter(task => task.recipient === employee.name && task.status === "new").length;
+  if (employee.name !== "Нейла") {
+    if (openTasks) return {label: `Новая задача · ${openTasks}`, tone: "attention", note: "Ожидает запуска функционального модуля."};
+    return {label: "В разработке", tone: "building", note: "Функциональный модуль ещё не включён."};
+  }
+  if (agentActivity.Нейла === "working") return {label: "Работает в 1С", tone: "working", note: "Читает или сверяет документы. Изменения в 1С не выполняются."};
+  if (connectionState.status === "error") return {label: "Ошибка подключения", tone: "error", note: "Нужно проверить подключение к 1С."};
+  const review = operations.filter(row => ["review", "unknown"].includes(row.status) || row.syncState === "missing").length;
+  if (review) return {label: `Ждёт решения · ${review}`, tone: "attention", note: "Есть операции, требующие решения бухгалтера."};
+  if (openTasks) return {label: `Новая задача · ${openTasks}`, tone: "attention", note: "Готова взять задачу в работу."};
+  return {label: connectionState.status === "connected" ? "Свободна · 1С подключена" : "Свободна", tone: "ready", note: "Очередь пуста; Нейла готова к следующей задаче."};
+}
+
+function statusPill(employee) {
+  const status = employeeStatus(employee);
+  return `<span class="employee-status ${status.tone}">${status.label}</span>`;
 }
 
 function identity(row) {
@@ -115,15 +135,15 @@ function nonBank(page) {
     <section class="employee-grid" aria-label="Сотрудники ОПОРЫ">
       ${employees.map(employee => `<article class="card employee employee-card">
         <span class="avatar" aria-hidden="true">${employee.avatar}</span>
-        <div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div>
-        <p class="muted">${employee.note}</p></div>
+        <div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div>${statusPill(employee)}</div>
+        <p class="muted">${employeeStatus(employee).note}</p></div>
         <small class="checkpoint">Контроль: ${employee.point}</small><div class="employee-actions">${taskButton(employee.name)}<a class="button" href="${employee.href}">Открыть</a></div>
       </article>`).join("")}
     </section>`;
   const employee = employees.find(item => item.name.toLowerCase() === page);
   if (employee) return `
     <div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> ${employee.name}</div>
-    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div><h1>${employee.name}</h1><p>ИИ-бухгалтер: ${employee.role}</p></div></div><span class="employee-status building">В разработке</span></header>
+    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div><h1>${employee.name}</h1><p>ИИ-бухгалтер: ${employee.role}</p></div></div>${statusPill(employee)}</header>
     <section class="card agent-brief"><div class="heading"><h2>Контрольная точка</h2>${taskButton(employee.name)}</div><strong>${employee.point}</strong><p>${employee.note}</p><p class="muted">Интерфейс уже использует тот же цикл, что и у Нейлы: показатели периода, очередь исключений, разбор решения и журнал. Функциональные источники 1С подключим после утверждения правил этого сотрудника.</p></section>`;
   return `
     <div class="breadcrumb">Рабочее пространство</div>
@@ -132,7 +152,7 @@ function nonBank(page) {
     </header>
     <section class="metrics" aria-label="Ситуация по периоду"><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют решения</span><strong>${counts.review + counts.unknown}</strong></div><div class="card metric"><span>Расхождения с 1С</span><strong>${operations.filter(row => row.syncState === "missing").length}</strong></div><div class="card metric"><span>ИИ-сотрудников</span><strong>${employees.length}</strong></div></section>
     <section class="chief-summary"><div><h2>Сводка заместителя главбуха</h2><p>Сначала разберите исключения по 50 / 51, затем переходите к первичке, взаиморасчётам и отчётности. Общая оборотка станет единым источником контрольных точек для всех сотрудников.</p></div><a class="button" href="#neila">Открыть очередь Нейлы</a></section>
-    <section class="employee-grid" aria-label="Статусы ИИ-сотрудников">${employees.map(employee => `<article class="card employee employee-card"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div><span class="employee-status ${employee.status === "Работает" ? "ready" : "building"}">${employee.status}</span></div><p class="checkpoint">${employee.point}</p><p class="muted">${employee.note}</p></div><div class="employee-actions">${taskButton(employee.name)}<a class="button" href="${employee.href}">Открыть</a></div></article>`).join("")}</section>`;
+    <section class="employee-grid" aria-label="Статусы ИИ-сотрудников">${employees.map(employee => `<article class="card employee employee-card"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div>${statusPill(employee)}</div><p class="checkpoint">${employee.point}</p><p class="muted">${employeeStatus(employee).note}</p></div><div class="employee-actions">${taskButton(employee.name)}<a class="button" href="${employee.href}">Открыть</a></div></article>`).join("")}</section>`;
 }
 
 function operationTable(rows) {
@@ -191,7 +211,7 @@ function neilaHub() {
   const waiting = operations.filter(row => ["review", "unknown"].includes(row.status)).length;
   return `
     <div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> Нейла</div>
-    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>Нейла</h1><p>ИИ-бухгалтер по банку и кассе</p></div></div><div class="hero-actions">${taskButton("Нейла")}<a class="button hero-link" href="#neila-control">Контроль счетов</a></div></header>
+    <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>Нейла</h1><p>ИИ-бухгалтер по банку и кассе</p><div class="hero-status">${statusPill(employees[0])}</div></div></div><div class="hero-actions">${taskButton("Нейла")}<a class="button hero-link" href="#neila-control">Контроль счетов</a></div></header>
     ${neilaTabs("hub")}
     <section class="metrics"><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>На проверке</span><strong>${waiting}</strong></div><div class="card metric"><span>Счёт 51</span><strong>${operations.filter(row => (row.account || "51") === "51").length}</strong></div><div class="card metric"><span>Счёт 50</span><strong>${operations.filter(row => row.account === "50").length}</strong></div></section>
     <section class="card agent-brief"><h2>Зона ответственности Нейлы</h2><p>Корректность движения по 51 и 50: наличие документа, статья движения, контрагент, назначение, совпадение с выпиской и кассовыми ордерами.</p><div class="action-links"><a href="#neila-bank">Банк · 51</a><a href="#neila-cash">Касса · 50</a><a href="#neila-control">Контроль счетов</a></div></section>`;
@@ -235,7 +255,7 @@ function bankPage(account = "51") {
   return `
     <div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> ${isCash ? "Касса" : "Банк"}</div>
     <header class="hero">
-      <div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>${isCash ? "Касса · 50" : "Банк · 51"}</h1><p>Нейла · ИИ-бухгалтер по банку и кассе</p></div></div>
+      <div class="profile"><span class="avatar" aria-hidden="true">Н</span><div><h1>${isCash ? "Касса · 50" : "Банк · 51"}</h1><p>Нейла · ИИ-бухгалтер по банку и кассе</p><div class="hero-status">${statusPill(employees[0])}</div></div></div>
       <div class="hero-actions">${taskButton("Нейла")}${isCash ? "" : '<button id="upload">+ Загрузить выписку</button>'}</div>
       <input type="file" id="file" accept=".txt,.csv" hidden aria-label="Файл банковской выписки">
     </header>
@@ -494,6 +514,7 @@ async function reconcileWith1C(button) {
     ? [...selectedRows].sort((a, b) => a - b).map(index => operations[index])
     : operations;
   button.disabled = true;
+  agentActivity.Нейла = "working";
   feedback = `Сверяем с документами 1С: ${selectedOperations.length} операций…`;
   render();
   try {
@@ -521,12 +542,15 @@ async function reconcileWith1C(button) {
   } catch (error) {
     feedback = error.message;
   }
+  agentActivity.Нейла = "idle";
   render();
 }
 
 async function loadMonthlyControl(button) {
   button.disabled = true;
+  agentActivity.Нейла = "working";
   feedback = "Загружаем банковские и кассовые документы из 1С…";
+  render();
   try {
     const response = await fetch("/api/1c/monthly-preview", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
     const result = await response.json();
@@ -539,6 +563,7 @@ async function loadMonthlyControl(button) {
   } catch (error) {
     feedback = error.message;
   }
+  agentActivity.Нейла = "idle";
   render();
 }
 
