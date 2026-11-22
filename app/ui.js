@@ -175,6 +175,7 @@ async function refreshConnectionStatus() {
 
 function nonBank(page) {
   const counts = stats();
+  if (page === "team-chat") return teamChatPage();
   if (page === "team") return `
     <div class="breadcrumb">Рабочее пространство <span aria-hidden="true">/</span> ИИ-сотрудники</div>
     <header class="hero"><div><h1>ИИ-сотрудники</h1><p>Единый формат работы: контрольная точка → очередь → решение → журнал.</p></div></header>
@@ -197,7 +198,7 @@ function nonBank(page) {
     <section class="card agent-brief"><div class="heading"><h2>Контрольная точка</h2>${taskButton(employee.name)}</div><strong>${employee.point}</strong><p>${employee.note}</p><p class="muted">Интерфейс уже использует тот же цикл, что и у Нейлы: показатели периода, очередь исключений, разбор решения и журнал. Функциональные источники 1С подключим после утверждения правил этого сотрудника.</p></section>`;
     return `<div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> ${employee.name}</div>
       <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div><h1>${employee.name}</h1><p>${profile.subtitle}</p><div class="hero-status">${statusPill(employee)}</div></div></div><div class="hero-actions">${taskButton(employee.name)}</div></header>
-      <nav class="subnav"><a href="#${page}" aria-current="page">Кабинет</a><a href="#${page}-chat">Рабочий чат</a></nav>
+      <nav class="subnav"><a href="#${page}" aria-current="page">Кабинет</a><a href="#team-chat">Командный чат</a></nav>
       <section class="metrics"><div class="card metric"><span>Контур контроля</span><strong>${escapeHtml(profile.accounts)}</strong></div><div class="card metric"><span>Источники</span><strong>${escapeHtml(profile.sources)}</strong></div><div class="card metric"><span>Статус</span><strong>Настраиваем</strong></div><div class="card metric"><span>Очередь</span><strong>0</strong></div></section>
       <section class="task-columns"><section class="card agent-brief"><div class="heading"><h2>Что проверяет ${employee.name}</h2></div><ul class="agent-checks">${profile.checks.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section><section class="card agent-brief"><h2>Текущая очередь</h2><strong>${escapeHtml(profile.queue)}</strong><p class="muted">Пока не подключена. Здесь появятся исключения после того, как вместе оцифруем правила проверки.</p></section></section>
       <section class="card agent-brief"><div class="heading"><h2>Рабочие действия</h2>${taskButton(employee.name)}</div><div class="action-links">${profile.tools.map(label => `<span class="secondary disabled-button">${escapeHtml(label)} · скоро</span>`).join("")}</div><p class="muted">Сначала фиксируем твой регламент и результат, который должен видеть главный бухгалтер; затем подключаем 1С и внешние источники.</p></section>
@@ -211,6 +212,12 @@ function nonBank(page) {
     <section class="metrics" aria-label="Ситуация по периоду"><div class="card metric"><span>Операций в контроле</span><strong>${operations.length}</strong></div><div class="card metric"><span>Требуют решения</span><strong>${counts.review + counts.unknown}</strong></div><div class="card metric"><span>Расхождения с 1С</span><strong>${operations.filter(row => row.syncState === "missing").length}</strong></div><div class="card metric"><span>ИИ-сотрудников</span><strong>${employees.length}</strong></div></section>
     <section class="chief-summary"><div><h2>Сводка заместителя главбуха</h2><p>Сначала разберите исключения по 50 / 51, затем переходите к первичке, взаиморасчётам и отчётности. Общая оборотка станет единым источником контрольных точек для всех сотрудников.</p></div><a class="button" href="#neila">Открыть очередь Нейлы</a></section>
     <section class="employee-grid" aria-label="Статусы ИИ-сотрудников">${employees.map(employee => `<article class="card employee employee-card"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div class="employee-body"><div class="employee-title"><div><h2>${employee.name}</h2><p>${employee.role}</p></div>${statusPill(employee)}</div><p class="checkpoint">${employee.point}</p><p class="muted">${employeeStatus(employee).note}</p></div><div class="employee-actions">${taskButton(employee.name)}<a class="button" href="${employee.href}">Открыть</a></div></article>`).join("")}</section>`;
+}
+
+function teamChatPage() {
+  const messages = agentChats.Команда || [{from: "agent", author: "Команда ОПОРЫ", text: "Мы на связи. Напишите задачу или исключение — определим ответственного, зависимого сотрудника и ожидаемый результат."}];
+  return `<div class="breadcrumb">Рабочее пространство <span aria-hidden="true">/</span> Командный чат</div><header class="hero"><div><h1>Командный чат</h1><p>Единый канал работы главбуха и ИИ-сотрудников</p></div></header>
+    <section class="card chat-panel"><div class="chat-stream">${messages.map(message => `<article class="chat-message ${message.from === "user" ? "from-user" : "from-agent"}"><strong>${escapeHtml(message.author || (message.from === "user" ? "Вы" : "Команда ОПОРЫ"))}</strong><p>${escapeHtml(message.text)}</p></article>`).join("")}</div><form id="agent-chat-form" data-agent="Команда"><textarea name="message" maxlength="2000" placeholder="Например: Лев, почему акт сверки с ООО «Вектор» нельзя подтвердить?" required></textarea><button>Отправить команде</button></form></section>`;
 }
 
 function agentChatPage(employee, profile) {
@@ -430,7 +437,7 @@ function connectionsPage() {
 }
 
 function render() {
-  const page = ["team", "bank", "analytics", "connections", "neila", "neila-bank", "neila-cash", "neila-control", "neila-tasks", "neila-archive", "neila-history", "marta", "marta-chat", "lev", "lev-chat", "rita", "rita-chat"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
+  const page = ["team", "team-chat", "bank", "analytics", "connections", "neila", "neila-bank", "neila-cash", "neila-control", "neila-tasks", "neila-archive", "neila-history", "marta", "marta-chat", "lev", "lev-chat", "rita", "rita-chat"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
   document.querySelectorAll("nav a").forEach(link => {
     if (link.hash === `#${page}`) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
@@ -447,8 +454,10 @@ screen.addEventListener("submit", async event => {
     const message = new FormData(form).get("message").trim();
     if (!message) return;
     const profile = agentProfiles[agent];
-    const response = `${agent}: приняла. Проверю: ${profile.checks.slice(0, 2).join("; ")}. Если обнаружу исключение, зафиксирую причину, передам её нужному сотруднику и верну результат в этот чат.`;
-    agentChats[agent] = [...(agentChats[agent] || []), {from: "user", text: message}, {from: "agent", text: response}];
+    const response = agent === "Команда"
+      ? "Марта: проверю первичные документы и ЭДО. Лев: после ответа Марты сверю влияние на 60/62. Рита: отмечу последствия для 68 и отчётности. Нейла: проверю связанные движения банка и кассы."
+      : `${agent}: приняла. Проверю: ${profile.checks.slice(0, 2).join("; ")}. Если обнаружу исключение, зафиксирую причину, передам её нужному сотруднику и верну результат в этот чат.`;
+    agentChats[agent] = [...(agentChats[agent] || []), {from: "user", text: message}, {from: "agent", author: agent === "Команда" ? "Команда ОПОРЫ" : agent, text: response}];
     saveAgentChats();
     logActivity(`${agent} получила поручение в рабочем чате: ${message}`);
     render();
