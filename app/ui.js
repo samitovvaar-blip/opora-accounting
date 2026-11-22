@@ -35,6 +35,12 @@ const employees = [
   {name: "Рита", role: "Отчётность", status: "В разработке", note: "Периоды, контрольные соотношения и готовность отчётов.", href: "#rita", avatar: "Р", point: "Сроки и ошибки перед сдачей"},
 ];
 
+const agentProfiles = {
+  Марта: {title: "Первичные документы", subtitle: "Документы, ЭДО и шаблоны", accounts: "Документы 1С и ЭДО", sources: "1С · СБИС · Контур · Астрал", checks: ["Документ из ЭДО есть в 1С", "Контрагент и договор определены", "Есть основание: УПД, акт, счёт-фактура"], queue: "Документы без отражения в 1С", tools: ["Загрузить шаблон", "Открыть контрагентов"], handoff: "Передаёт Льву: документ из ЭДО есть, но в 1С не отражён."},
+  Лев: {title: "Взаиморасчёты", subtitle: "Клиенты, поставщики и расчёты", accounts: "Счета 60 и 62", sources: "ОСВ · документы 1С · договоры", checks: ["Остатки по контрагентам", "Авансы и закрывающие документы", "Просроченная дебиторка и кредиторка"], queue: "Расхождения по 60 / 62", tools: ["Открыть ОСВ 60 / 62", "Сформировать сверку"], handoff: "Получает от Марты: документ из ЭДО не отражён в 1С — акт сверки нельзя подтвердить."},
+  Рита: {title: "Налоги и отчётность", subtitle: "Начисления, оплаты и сроки", accounts: "Счёт 68", sources: "ОСВ · регистры 1С · календарь отчётности", checks: ["Налог начислен и оплачен", "Отчётность подготовлена и сдана", "Сроки и контрольные соотношения"], queue: "Налоги и отчёты, требующие внимания", tools: ["Открыть ОСВ 68", "Проверить календарь"], handoff: "Получает от Нейлы и Марты: оплаты и первичные документы, влияющие на налоги и отчётность."},
+};
+
 try {
   const stored = JSON.parse(localStorage.getItem(storageKey) || "[]");
   if (Array.isArray(stored)) operations = stored;
@@ -176,10 +182,19 @@ function nonBank(page) {
       </article>`).join("")}
     </section>`;
   const employee = employees.find(item => item.name.toLowerCase() === page);
-  if (employee) return `
+  if (employee) {
+    const profile = agentProfiles[employee.name];
+    if (!profile) return `
     <div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> ${employee.name}</div>
     <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div><h1>${employee.name}</h1><p>ИИ-бухгалтер: ${employee.role}</p></div></div>${statusPill(employee)}</header>
     <section class="card agent-brief"><div class="heading"><h2>Контрольная точка</h2>${taskButton(employee.name)}</div><strong>${employee.point}</strong><p>${employee.note}</p><p class="muted">Интерфейс уже использует тот же цикл, что и у Нейлы: показатели периода, очередь исключений, разбор решения и журнал. Функциональные источники 1С подключим после утверждения правил этого сотрудника.</p></section>`;
+    return `<div class="breadcrumb"><a href="#home">Главная</a><span aria-hidden="true">/</span> ${employee.name}</div>
+      <header class="hero"><div class="profile"><span class="avatar" aria-hidden="true">${employee.avatar}</span><div><h1>${employee.name}</h1><p>${profile.subtitle}</p><div class="hero-status">${statusPill(employee)}</div></div></div><div class="hero-actions">${taskButton(employee.name)}</div></header>
+      <section class="metrics"><div class="card metric"><span>Контур контроля</span><strong>${escapeHtml(profile.accounts)}</strong></div><div class="card metric"><span>Источники</span><strong>${escapeHtml(profile.sources)}</strong></div><div class="card metric"><span>Статус</span><strong>Настраиваем</strong></div><div class="card metric"><span>Очередь</span><strong>0</strong></div></section>
+      <section class="task-columns"><section class="card agent-brief"><div class="heading"><h2>Что проверяет ${employee.name}</h2></div><ul class="agent-checks">${profile.checks.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section><section class="card agent-brief"><h2>Текущая очередь</h2><strong>${escapeHtml(profile.queue)}</strong><p class="muted">Пока не подключена. Здесь появятся исключения после того, как вместе оцифруем правила проверки.</p></section></section>
+      <section class="card agent-brief"><div class="heading"><h2>Рабочие действия</h2>${taskButton(employee.name)}</div><div class="action-links">${profile.tools.map(label => `<span class="secondary disabled-button">${escapeHtml(label)} · скоро</span>`).join("")}</div><p class="muted">Сначала фиксируем твой регламент и результат, который должен видеть главный бухгалтер; затем подключаем 1С и внешние источники.</p></section>
+      <section class="card agent-brief"><h2>Связь с командой</h2><strong>${escapeHtml(profile.handoff)}</strong><p class="muted">Здесь сотрудник будет давать понятный вывод, передавать исключение нужному коллеге и ждать ответ. На главной заместитель главбуха увидит всю цепочку.</p></section>`;
+  }
   return `
     <div class="breadcrumb">Рабочее пространство</div>
     <header class="hero">
