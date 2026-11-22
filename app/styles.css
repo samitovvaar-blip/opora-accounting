@@ -115,6 +115,7 @@ td:nth-child(2) { min-width: 185px; overflow-wrap: anywhere; }
 .task-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 .task-start { white-space: nowrap; }
 .task-row small, .history-list small { display: block; color: var(--muted); margin-top: 3px; font-size: .8125rem; }
+.task-result { margin: 8px 0 0; color: var(--navy-light); font-size: .875rem; line-height: 1.45; max-width: 680px; }
 .history-list > article { display: grid; gap: 3px; }
 .history-link { color: var(--navy-light); font-weight: 650; font-size: .8125rem; width: fit-content; margin-top: 4px; }
 .visible-work { margin-top: 18px; }
