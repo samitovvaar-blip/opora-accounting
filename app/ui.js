@@ -68,8 +68,8 @@ function saveTasks(next) {
   tasks = next;
 }
 
-function logActivity(text, level = "info") {
-  activities = [{id: crypto.randomUUID(), text, level, at: new Date().toISOString()}, ...activities].slice(0, 200);
+function logActivity(text, level = "info", href = "") {
+  activities = [{id: crypto.randomUUID(), text, level, href, at: new Date().toISOString()}, ...activities].slice(0, 200);
   localStorage.setItem(activityStorageKey, JSON.stringify(activities));
 }
 
@@ -231,19 +231,31 @@ function taskStatus(task) {
   return task.status === "done" ? "Выполнена" : task.status === "working" ? "В работе" : "Новая";
 }
 
+function oneCLink() {
+  return connectionState.status === "connected" && connectionState.url ? connectionState.url : "";
+}
+
+function taskAction(task, routine = "") {
+  if (task?.status === "done") return "";
+  if (task?.status === "working") return '<span class="employee-status working">В работе</span>';
+  const id = task?.id || routine;
+  return `<button class="secondary task-start" data-start-task="${escapeHtml(id)}" data-routine="${escapeHtml(routine)}">Запустить</button>`;
+}
+
 function neilaTasksPage() {
   const neilaTasks = tasks.filter(task => task.recipient === "Нейла");
   const routine = ["Загрузить и сверить банковскую выписку", "Проверить остатки и движения по 50 / 51", "Разобрать неверные статьи и операции без документа"];
   return `<div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> Задачи</div><header class="hero"><div><h1>Задачи Нейлы</h1><p>Очередь поручений и регламентных проверок</p></div><div class="hero-actions">${taskButton("Нейла")}</div></header>${neilaTabs("neila-tasks")}
-    <section class="task-columns"><section class="card task-list"><div class="heading"><h2>Поручения</h2><span>${neilaTasks.length}</span></div>${neilaTasks.length ? neilaTasks.map(task => `<article class="task-row"><div><strong>${escapeHtml(task.text)}</strong><small>${new Date(task.createdAt).toLocaleString("ru-RU")}${task.hasVoice ? " · голосовое" : ""}</small></div><span class="employee-status ${task.status === "done" ? "ready" : task.status === "working" ? "working" : "attention"}">${taskStatus(task)}</span></article>`).join("") : '<div class="empty"><strong>Нет новых поручений</strong><p>Нажмите круглый плюс, чтобы поставить задачу.</p></div>'}</section>
-    <section class="card task-list"><div class="heading"><h2>Ежедневный регламент</h2><span>Каждый день</span></div>${routine.map((item, index) => `<article class="task-row"><div><strong>${item}</strong><small>${index === 0 ? "Выписка, документы и остатки" : index === 1 ? "Контроль в 1С" : "Очередь исключений"}</small></div><span class="employee-status ${employeeStatus(employees[0]).tone}">${index === 0 && agentActivity.Нейла === "working" ? "В работе" : "Ожидает запуска"}</span></article>`).join("")}</section></section>
+    <section class="task-columns"><section class="card task-list"><div class="heading"><h2>Поручения</h2><span>${neilaTasks.length}</span></div>${neilaTasks.length ? neilaTasks.map(task => `<article class="task-row"><div><strong>${escapeHtml(task.text)}</strong><small>${new Date(task.createdAt).toLocaleString("ru-RU")}${task.hasVoice ? " · голосовое" : ""}</small></div><div class="task-actions"><span class="employee-status ${task.status === "done" ? "ready" : task.status === "working" ? "working" : "attention"}">${taskStatus(task)}</span>${taskAction(task)}</div></article>`).join("") : '<div class="empty"><strong>Нет новых поручений</strong><p>Нажмите круглый плюс, чтобы поставить задачу.</p></div>'}</section>
+    <section class="card task-list"><div class="heading"><h2>Ежедневный регламент</h2><span>Каждый день</span></div>${routine.map((item, index) => `<article class="task-row"><div><strong>${item}</strong><small>${index === 0 ? "Читает выписку и документы 1С" : index === 1 ? "ОСВ 50 / 51 и контроль оборотов" : "Очередь исключений"}</small></div><div class="task-actions"><span class="employee-status ${agentActivity.Нейла === "working" ? "working" : "attention"}">${agentActivity.Нейла === "working" ? "В работе" : "Ожидает запуска"}</span>${taskAction(null, `daily-${index}`)}</div></article>`).join("")}</section></section>
+    <section class="card agent-brief visible-work"><h2>Как видеть работу в 1С</h2><p>Нажмите «Запустить»: Нейла зафиксирует каждый этап здесь и в «Истории». Для фонового чтения OData кликов в интерфейсе 1С нет — это прямой безопасный обмен. Ссылка «Открыть 1С» ведёт в вашу базу, чтобы сразу проверить результат.</p>${oneCLink() ? `<a class="button" target="_blank" rel="noopener" href="${escapeHtml(oneCLink())}">Открыть 1С</a>` : '<a class="button" href="#connections">Подключить 1С</a>'}</section>
     <section class="card agent-brief"><h2>Ежемесячный регламент</h2><p>Сверка оборотов 50 / 51, разбор неразнесённых операций, контроль кассовой дисциплины, итоговый отчёт главному бухгалтеру.</p></section>`;
 }
 
 function neilaHistoryPage() {
   const entries = activities.filter(item => item.text.includes("Нейла") || item.text.includes("1С"));
   return `<div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> История</div><header class="hero"><div><h1>История действий</h1><p>Что Нейла делала в 1С и в рабочей очереди</p></div></header>${neilaTabs("neila-history")}
-    <section class="card history-list">${entries.length ? entries.map(item => `<article><strong>${escapeHtml(item.text)}</strong><small>${new Date(item.at).toLocaleString("ru-RU")}</small></article>`).join("") : '<div class="empty"><strong>История пока пуста</strong><p>Здесь появятся загрузки, сверки, решения и выполненные задачи.</p></div>'}</section>`;
+    <section class="card history-list">${entries.length ? entries.map(item => `<article><strong>${escapeHtml(item.text)}</strong><small>${new Date(item.at).toLocaleString("ru-RU")}</small>${item.href ? `<a class="history-link" target="_blank" rel="noopener" href="${escapeHtml(item.href)}">Открыть 1С</a>` : ""}</article>`).join("") : '<div class="empty"><strong>История пока пуста</strong><p>Здесь появятся загрузки, сверки, решения и выполненные задачи.</p></div>'}</section>`;
 }
 
 function neilaHub() {
@@ -304,6 +316,7 @@ function bankPage(account = "51") {
     <div class="import-info"><span>${isCash ? "Источник: ПКО и РКО в 1С; Мой ОФД будет добавлен как сверочный источник." : "CSV по образцу или TXT в формате 1С"}</span>${isCash ? "" : '<a href="examples/vypiska.csv" download>Скачать образец CSV</a><button class="text-button" id="demo">Открыть демо</button>'}</div>
     <p class="feedback" role="status">${escapeHtml(feedback)}</p>
     <section class="metrics" aria-label="Итоги обработки">${metrics.map(([label, value]) => `<div class="card metric"><span>${label}</span><strong>${value}</strong></div>`).join("")}</section>
+    ${selectedPeriod && !scope.length ? '<div class="control-note"><strong>За выбранный месяц документы ещё не загружены в рабочее место</strong><span>Это не означает нулевые обороты в 1С. Нажмите «Обновить из 1С» на вкладке «Контроль 50 / 51», чтобы Нейла прочитала документы за период.</span></div>' : ""}
     <section class="card ledger" aria-labelledby="ledger-title">
       <div class="ledger-heading"><div><h2 id="ledger-title">${isCash ? "Кассовые операции" : "Банковские операции"}</h2><p class="muted">${isCash ? "Нейла контролирует ПКО, РКО и статьи движения по кассе." : "Нейла классифицирует выписку, сверяет её с 1С и готовит черновики."} Проведённые документы не изменяются.</p></div>
         <div class="filters" aria-label="Фильтр операций">
@@ -539,6 +552,7 @@ screen.addEventListener("click", event => {
   }, "Демонстрационная выписка");
   if (button.id === "reconcile") reconcileWith1C(button);
   if (button.id === "load-1c-months") loadMonthlyControl(button);
+  if (button.dataset.startTask) startNeilaTask(button.dataset.startTask, button.dataset.routine);
   if (button.dataset.taskFor) openTaskComposer(button.dataset.taskFor);
   if (button.dataset.filter) {
     filter = button.dataset.filter;
@@ -592,9 +606,9 @@ async function reconcileWith1C(button) {
 }
 
 async function loadMonthlyControl(button) {
-  button.disabled = true;
+  if (button) button.disabled = true;
   agentActivity.Нейла = "working";
-  logActivity("Нейла начала загрузку банковских и кассовых документов из 1С.");
+  logActivity("Нейла: открыла контур 1С и начала чтение банковских и кассовых документов.", "info", oneCLink());
   feedback = "Загружаем банковские и кассовые документы из 1С…";
   render();
   try {
@@ -609,12 +623,38 @@ async function loadMonthlyControl(button) {
     additions.forEach(row => unique.set(identity(row), row));
     save([...unique.values()]);
     feedback = `Из 1С загружено для контроля: ${additions.length} документов. Ничего в 1С не изменено.`;
-    logActivity(`Нейла загрузила из 1С ${additions.length} документов для контроля 50 / 51.`);
+    logActivity(`Нейла: прочитала из 1С ${additions.length} документов для контроля 50 / 51. В 1С ничего не изменено.`, "info", oneCLink());
   } catch (error) {
     feedback = error.message;
     logActivity(`Ошибка Нейлы при загрузке из 1С: ${feedback}`, "error");
   }
   agentActivity.Нейла = "idle";
+  render();
+}
+
+async function startNeilaTask(taskId, routine) {
+  const task = tasks.find(item => item.id === taskId);
+  if (task) {
+    saveTasks(tasks.map(item => item.id === taskId ? {...item, status: "working", startedAt: new Date().toISOString()} : item));
+    logActivity(`Нейла начала задачу: ${task.text}`, "info", oneCLink());
+  } else {
+    logActivity(`Нейла запустила ежедневный регламент: ${routine === "daily-0" ? "загрузка и сверка выписки" : routine === "daily-1" ? "контроль 50 / 51" : "разбор исключений"}.`, "info", oneCLink());
+  }
+  agentActivity.Нейла = "working";
+  render();
+  // Первый регламент уже выполняет безопасное действие: читает документы
+  // по OData и не создаёт и не изменяет записи в 1С.
+  if (routine === "daily-0" || task) {
+    await loadMonthlyControl(null);
+  } else {
+    feedback = "Задача запущена. Нейла готовит контроль ОСВ 50 / 51; результаты появятся после подключения регистра бухгалтерии.";
+    logActivity("Нейла зафиксировала задачу контроля ОСВ 50 / 51. Ожидается подключение регистра бухгалтерии 1С.", "info", oneCLink());
+    agentActivity.Нейла = "idle";
+  }
+  if (task) {
+    saveTasks(tasks.map(item => item.id === taskId ? {...item, status: "done", completedAt: new Date().toISOString()} : item));
+    logActivity(`Нейла завершила задачу: ${task.text}`, "info", oneCLink());
+  }
   render();
 }
 
