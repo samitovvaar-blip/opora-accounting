@@ -153,6 +153,16 @@ dialog form, #details { display: grid; gap: 10px; }
 dialog textarea { width: 100%; min-height: 120px; resize: vertical; border: 1px solid #a5b1c4; border-radius: 9px; padding: 10px 12px; font: inherit; color: var(--text); }
 .voice-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .voice-tools audio { max-width: 100%; height: 34px; }
+.agent-checks { margin: 12px 0 0; padding-left: 20px; color: var(--muted); }
+.agent-checks li + li { margin-top: 7px; }
+.chat-panel { margin-top: 18px; overflow: hidden; }
+.chat-stream { display: grid; gap: 10px; padding: 18px; min-height: 260px; background: #f8f9fc; }
+.chat-message { max-width: min(720px, 92%); padding: 11px 13px; border-radius: 12px; }
+.chat-message p { margin-top: 3px; }
+.from-agent { background: #e9eefb; color: var(--navy); }
+.from-user { background: var(--navy); color: white; margin-left: auto; }
+#agent-chat-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px; border-top: 1px solid var(--line); }
+#agent-chat-form textarea { min-height: 46px; width: 100%; }
 .heading { justify-content: space-between; }
 .detail-amount { font-size: 1.65rem; font-weight: 750; }
 .purpose { overflow-wrap: anywhere; white-space: pre-wrap; }
