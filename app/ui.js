@@ -141,7 +141,8 @@ async function refreshConnectionStatus() {
     const response = await fetch("/api/1c/status", {cache: "no-store"});
     if (!response.ok) return;
     connectionState = await response.json();
-    if (location.hash === "#connections") render();
+    // Статус подключения влияет на действия Нейлы и ссылку в 1С на всех её вкладках.
+    render();
   } catch {
     // Статус останется локальным, если защищённый сервис ещё не запущен.
   }
