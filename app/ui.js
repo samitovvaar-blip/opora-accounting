@@ -117,6 +117,20 @@ function formatDate(date) {
   return dates.format(new Date(date));
 }
 
+function restoreLegacyTaskResults() {
+  let changed = false;
+  const latest = operations.filter(row => (row.account || "51") === "51").map(row => row.date).sort().at(-1);
+  const repaired = tasks.map(task => {
+    if (task.status !== "done" || task.result) return task;
+    changed = true;
+    const isCoverageQuestion = /до какого|загружен банк/i.test(task.text || "");
+    return {...task, status: "completed", result: isCoverageQuestion && latest
+      ? `Банк загружен до ${formatDate(latest)}. Это результат по данным, которые уже есть в рабочем месте Нейлы.`
+      : "Предыдущий запуск был закрыт без сохранённого результата. Запустите поручение повторно, чтобы Нейла сформировала проверяемый вывод."};
+  });
+  if (changed) saveTasks(repaired);
+}
+
 function stats() {
   return Object.fromEntries(Object.keys(Bank.status).map(status => [status, operations.filter(row => row.status === status).length]));
 }
@@ -224,12 +238,12 @@ function analyticsTable(account) {
 }
 
 function neilaTabs(active) {
-  const tabs = [["neila-bank", "Операции"], ["neila-cash", "Касса"], ["neila-control", "Контроль 50 / 51"], ["neila-tasks", "Задачи"], ["neila-history", "История"]];
+  const tabs = [["neila-bank", "Операции"], ["neila-cash", "Касса"], ["neila-control", "Контроль 50 / 51"], ["neila-tasks", "Задачи"], ["neila-archive", "Архив поручений"], ["neila-history", "Действия Нейлы"]];
   return `<nav class="subnav" aria-label="Разделы Нейлы">${tabs.map(([href, label]) => `<a href="#${href}" ${active === href ? 'aria-current="page"' : ""}>${label}</a>`).join("")}</nav>`;
 }
 
 function taskStatus(task) {
-  return task.status === "done" ? "Выполнена" : task.status === "working" ? "В работе" : "Новая";
+  return ["done", "completed", "archived"].includes(task.status) ? "Выполнена" : task.status === "working" ? "В работе" : "Новая";
 }
 
 function oneCLink() {
@@ -237,24 +251,30 @@ function oneCLink() {
 }
 
 function taskAction(task, routine = "") {
-  if (task?.status === "done") return "";
+  if (["done", "completed"].includes(task?.status)) return `<button class="secondary task-start" data-open-result="${escapeHtml(task.id)}">Открыть результат</button>`;
   if (task?.status === "working") return '<span class="employee-status working">В работе</span>';
   const id = task?.id || routine;
   return `<button class="secondary task-start" data-start-task="${escapeHtml(id)}" data-routine="${escapeHtml(routine)}">Запустить</button>`;
 }
 
 function neilaTasksPage() {
-  const neilaTasks = tasks.filter(task => task.recipient === "Нейла");
+  const neilaTasks = tasks.filter(task => task.recipient === "Нейла" && task.status !== "archived");
   const routine = ["Загрузить и сверить банковскую выписку", "Проверить остатки и движения по 50 / 51", "Разобрать неверные статьи и операции без документа"];
   return `<div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> Задачи</div><header class="hero"><div><h1>Задачи Нейлы</h1><p>Очередь поручений и регламентных проверок</p></div><div class="hero-actions">${taskButton("Нейла")}</div></header>${neilaTabs("neila-tasks")}
-    <section class="task-columns"><section class="card task-list"><div class="heading"><h2>Поручения</h2><span>${neilaTasks.length}</span></div>${neilaTasks.length ? neilaTasks.map(task => `<article class="task-row"><div><strong>${escapeHtml(task.text)}</strong><small>${new Date(task.createdAt).toLocaleString("ru-RU")}${task.hasVoice ? " · голосовое" : ""}</small></div><div class="task-actions"><span class="employee-status ${task.status === "done" ? "ready" : task.status === "working" ? "working" : "attention"}">${taskStatus(task)}</span>${taskAction(task)}</div></article>`).join("") : '<div class="empty"><strong>Нет новых поручений</strong><p>Нажмите круглый плюс, чтобы поставить задачу.</p></div>'}</section>
+    <section class="task-columns"><section class="card task-list"><div class="heading"><h2>Поручения</h2><span>${neilaTasks.length}</span></div>${neilaTasks.length ? neilaTasks.map(task => `<article class="task-row"><div><strong>${escapeHtml(task.text)}</strong><small>${new Date(task.createdAt).toLocaleString("ru-RU")}${task.hasVoice ? " · голосовое" : ""}</small>${task.result ? `<p class="task-result">${escapeHtml(task.result)}</p>` : ""}</div><div class="task-actions"><span class="employee-status ${["done", "completed"].includes(task.status) ? "ready" : task.status === "working" ? "working" : "attention"}">${taskStatus(task)}</span>${taskAction(task)}</div></article>`).join("") : '<div class="empty"><strong>Нет новых поручений</strong><p>Нажмите круглый плюс, чтобы поставить задачу.</p></div>'}</section>
     <section class="card task-list"><div class="heading"><h2>Ежедневный регламент</h2><span>Каждый день</span></div>${routine.map((item, index) => `<article class="task-row"><div><strong>${item}</strong><small>${index === 0 ? "Читает выписку и документы 1С" : index === 1 ? "ОСВ 50 / 51 и контроль оборотов" : "Очередь исключений"}</small></div><div class="task-actions"><span class="employee-status ${agentActivity.Нейла === "working" ? "working" : "attention"}">${agentActivity.Нейла === "working" ? "В работе" : "Ожидает запуска"}</span>${taskAction(null, `daily-${index}`)}</div></article>`).join("")}</section></section>
     <section class="card agent-brief visible-work"><h2>Как видеть работу в 1С</h2><p>Нажмите «Запустить»: Нейла зафиксирует каждый этап здесь и в «Истории». Для фонового чтения OData кликов в интерфейсе 1С нет — это прямой безопасный обмен. Ссылка «Открыть 1С» ведёт в вашу базу, чтобы сразу проверить результат.</p>${oneCLink() ? `<a class="button" target="_blank" rel="noopener" href="${escapeHtml(oneCLink())}">Открыть 1С</a>` : '<a class="button" href="#connections">Подключить 1С</a>'}</section>
     <section class="card agent-brief"><h2>Ежемесячный регламент</h2><p>Сверка оборотов 50 / 51, разбор неразнесённых операций, контроль кассовой дисциплины, итоговый отчёт главному бухгалтеру.</p></section>`;
 }
 
+function neilaArchivePage() {
+  const archived = tasks.filter(task => task.recipient === "Нейла" && task.status === "archived");
+  return `<div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> Архив поручений</div><header class="hero"><div><h1>Архив поручений</h1><p>Просмотренные результаты выполненных задач</p></div></header>${neilaTabs("neila-archive")}
+    <section class="card history-list">${archived.length ? archived.map(task => `<article><strong>${escapeHtml(task.text)}</strong><small>Выполнено: ${new Date(task.completedAt || task.createdAt).toLocaleString("ru-RU")}</small><p class="task-result"><strong>Результат:</strong> ${escapeHtml(task.result || "Результат не зафиксирован.")}</p>${task.resultLink ? `<a class="history-link" target="_blank" rel="noopener" href="${escapeHtml(task.resultLink)}">Открыть 1С</a>` : ""}</article>`).join("") : '<div class="empty"><strong>Архив пока пуст</strong><p>Выполненное поручение попадёт сюда после просмотра результата.</p></div>'}</section>`;
+}
+
 function neilaHistoryPage() {
-  const entries = activities.filter(item => item.text.includes("Нейла") || item.text.includes("1С"));
+  const entries = activities.filter(item => (item.text.includes("Нейла") || item.text.includes("1С")) && !item.text.startsWith("Новая задача") && !item.text.startsWith("Нейла начала задачу") && !item.text.startsWith("Нейла завершила задачу"));
   return `<div class="breadcrumb"><a href="#neila">Нейла</a><span aria-hidden="true">/</span> История</div><header class="hero"><div><h1>История действий</h1><p>Что Нейла делала в 1С и в рабочей очереди</p></div></header>${neilaTabs("neila-history")}
     <section class="card history-list">${entries.length ? entries.map(item => `<article><strong>${escapeHtml(item.text)}</strong><small>${new Date(item.at).toLocaleString("ru-RU")}</small>${item.href ? `<a class="history-link" target="_blank" rel="noopener" href="${escapeHtml(item.href)}">Открыть 1С</a>` : ""}</article>`).join("") : '<div class="empty"><strong>История пока пуста</strong><p>Здесь появятся загрузки, сверки, решения и выполненные задачи.</p></div>'}</section>`;
 }
@@ -379,12 +399,12 @@ function connectionsPage() {
 }
 
 function render() {
-  const page = ["team", "bank", "analytics", "connections", "neila", "neila-bank", "neila-cash", "neila-control", "neila-tasks", "neila-history", "marta", "lev", "rita"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
+  const page = ["team", "bank", "analytics", "connections", "neila", "neila-bank", "neila-cash", "neila-control", "neila-tasks", "neila-archive", "neila-history", "marta", "lev", "rita"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "home";
   document.querySelectorAll("nav a").forEach(link => {
     if (link.hash === `#${page}`) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  screen.innerHTML = page === "bank" || page === "neila-bank" ? bankPage("51") : page === "neila-cash" ? bankPage("50") : page === "analytics" || page === "neila-control" ? analyticsPage() : page === "neila-tasks" ? neilaTasksPage() : page === "neila-history" ? neilaHistoryPage() : page === "neila" ? neilaHub() : page === "connections" ? connectionsPage() : nonBank(page);
+  screen.innerHTML = page === "bank" || page === "neila-bank" ? bankPage("51") : page === "neila-cash" ? bankPage("50") : page === "analytics" || page === "neila-control" ? analyticsPage() : page === "neila-tasks" ? neilaTasksPage() : page === "neila-archive" ? neilaArchivePage() : page === "neila-history" ? neilaHistoryPage() : page === "neila" ? neilaHub() : page === "connections" ? connectionsPage() : nonBank(page);
   renderAccount();
 }
 
@@ -554,6 +574,7 @@ screen.addEventListener("click", event => {
   if (button.id === "reconcile") reconcileWith1C(button);
   if (button.id === "load-1c-months") loadMonthlyControl(button);
   if (button.dataset.startTask) startNeilaTask(button.dataset.startTask, button.dataset.routine);
+  if (button.dataset.openResult) archiveTaskAfterReview(button.dataset.openResult);
   if (button.dataset.taskFor) openTaskComposer(button.dataset.taskFor);
   if (button.dataset.filter) {
     filter = button.dataset.filter;
@@ -625,9 +646,11 @@ async function loadMonthlyControl(button) {
     save([...unique.values()]);
     feedback = `Из 1С загружено для контроля: ${additions.length} документов. Ничего в 1С не изменено.`;
     logActivity(`Нейла: прочитала из 1С ${additions.length} документов для контроля 50 / 51. В 1С ничего не изменено.`, "info", oneCLink());
+    return {ok: true, count: additions.length, latestBankDate: additions.filter(item => item.account === "51").map(item => item.date).sort().at(-1) || ""};
   } catch (error) {
     feedback = error.message;
     logActivity(`Ошибка Нейлы при загрузке из 1С: ${feedback}`, "error");
+    return {ok: false, error: feedback};
   }
   agentActivity.Нейла = "idle";
   render();
@@ -645,18 +668,31 @@ async function startNeilaTask(taskId, routine) {
   render();
   // Первый регламент уже выполняет безопасное действие: читает документы
   // по OData и не создаёт и не изменяет записи в 1С.
+  let outcome;
   if (routine === "daily-0" || task) {
-    await loadMonthlyControl(null);
+    outcome = await loadMonthlyControl(null);
   } else {
     feedback = "Задача запущена. Нейла готовит контроль ОСВ 50 / 51; результаты появятся после подключения регистра бухгалтерии.";
     logActivity("Нейла зафиксировала задачу контроля ОСВ 50 / 51. Ожидается подключение регистра бухгалтерии 1С.", "info", oneCLink());
     agentActivity.Нейла = "idle";
   }
   if (task) {
-    saveTasks(tasks.map(item => item.id === taskId ? {...item, status: "done", completedAt: new Date().toISOString()} : item));
-    logActivity(`Нейла завершила задачу: ${task.text}`, "info", oneCLink());
+    const coverage = outcome?.latestBankDate ? `Банк загружен до ${formatDate(outcome.latestBankDate)}.` : "Банковские документы за доступный период не найдены. Проверьте загрузку выписки в 1С.";
+    const result = outcome?.ok
+      ? `${coverage} Нейла прочитала ${outcome.count} документов из 1С; документы в 1С не изменялись.`
+      : `Поручение не выполнено: ${outcome?.error || "не удалось получить данные из 1С"}.`;
+    saveTasks(tasks.map(item => item.id === taskId ? {...item, status: outcome?.ok ? "completed" : "new", completedAt: outcome?.ok ? new Date().toISOString() : "", result, resultLink: oneCLink()} : item));
+    logActivity(outcome?.ok ? `Нейла завершила задачу: ${task.text}. ${result}` : `Нейла не завершила задачу: ${task.text}. ${result}`, outcome?.ok ? "info" : "error", oneCLink());
   }
   render();
+}
+
+function archiveTaskAfterReview(taskId) {
+  const task = tasks.find(item => item.id === taskId);
+  if (!task) return;
+  saveTasks(tasks.map(item => item.id === taskId ? {...item, status: "archived", viewedAt: new Date().toISOString()} : item));
+  logActivity(`Результат поручения просмотрен и перенесён в архив: ${task.text}`);
+  location.hash = "neila-archive";
 }
 
 document.querySelector(".sidebar").addEventListener("click", event => {
@@ -740,5 +776,6 @@ window.addEventListener("opora-auth", event => {
   authError = event.detail.error || "";
   renderAccount();
 });
+restoreLegacyTaskResults();
 render();
 refreshConnectionStatus();
